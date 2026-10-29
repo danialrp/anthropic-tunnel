@@ -1,0 +1,99 @@
+{
+  "log": { "level": "info", "timestamp": true },
+
+  "dns": {
+    "servers": [
+      { "type": "fakeip", "tag": "fake", "inet4_range": "198.18.0.0/15", "inet6_range": "2001:2::/48" },
+      { "type": "udp",    "tag": "dns-tunnel", "server": "1.1.1.1", "server_port": 53, "detour": "anthropic" },
+      { "type": "local",  "tag": "system" }
+    ],
+    "rules": [
+      {
+        "inbound": ["tun-in"],
+        "domain_suffix": ["anthropic.com", "claude.ai", "claude.com", "claude.app", "claudeusercontent.com", "claudemcpcontent.com"],
+        "query_type": ["A", "AAAA"],
+        "action": "route", "server": "fake"
+      },
+      {
+        "domain_suffix": ["anthropic.com", "claude.ai", "claude.com", "claude.app", "claudeusercontent.com", "claudemcpcontent.com"],
+        "query_type": ["HTTPS", "SVCB"],
+        "action": "reject"
+      },
+      {
+        "domain_suffix": ["anthropic.com", "claude.ai", "claude.com", "claude.app", "claudeusercontent.com", "claudemcpcontent.com"],
+        "action": "route", "server": "dns-tunnel"
+      }
+    ],
+    "final": "system",
+    "strategy": "prefer_ipv4"
+  },
+
+  "inbounds": [
+    {
+      "type": "tun", "tag": "tun-in",
+      "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "mixed"
+    }
+  ],
+
+  "endpoints": [
+    {
+      "type": "wireguard", "tag": "wg-out",
+      "system": false,
+      "mtu": 1280,
+      "address": ["10.66.66.2/32"],
+      "private_key": "__WG_CLIENT_KEY__",
+      "peers": [
+        {
+          "address": "__SERVER_IP__", "port": 51820,
+          "public_key": "__WG_SERVER_PUB__",
+          "pre_shared_key": "__WG_PSK__",
+          "allowed_ips": ["0.0.0.0/0", "::/0"],
+          "persistent_keepalive_interval": 25
+        }
+      ],
+      "domain_resolver": { "server": "dns-tunnel", "strategy": "ipv4_only" }
+    }
+  ],
+
+  "outbounds": [
+    { "type": "selector", "tag": "anthropic", "outbounds": ["wg-out", "vless-out"], "default": "wg-out", "interrupt_exist_connections": true },
+    {
+      "type": "vless", "tag": "vless-out",
+      "server": "__SERVER_IP__", "server_port": 8444,
+      "uuid": "__VLESS_UUID__", "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.apple.com",
+        "utls": { "enabled": true, "fingerprint": "chrome" },
+        "reality": { "enabled": true, "public_key": "__REALITY_PUB__", "short_id": "__REALITY_SHORTID__" }
+      }
+    },
+    { "type": "direct",   "tag": "direct" },
+    { "type": "block",    "tag": "block" }
+  ],
+
+  "route": {
+    "rules": [
+      { "action": "sniff" },
+      { "protocol": "dns", "action": "hijack-dns" },
+      { "port": 53, "network": "udp", "action": "hijack-dns" },
+      {
+        "domain_suffix": ["anthropic.com", "claude.ai", "claude.com", "claude.app", "claudeusercontent.com", "claudemcpcontent.com"],
+        "action": "route", "outbound": "anthropic"
+      },
+      { "ip_cidr": ["160.79.104.0/23", "2607:6bc0::/48"], "action": "route", "outbound": "anthropic" },
+      { "ip_is_private": true, "action": "route", "outbound": "direct" }
+    ],
+    "final": "direct",
+    "auto_detect_interface": true,
+    "default_domain_resolver": "system"
+  },
+
+  "experimental": {
+    "clash_api": { "external_controller": "127.0.0.1:9090", "secret": "__CLASH_SECRET__" },
+    "cache_file": { "enabled": true, "path": "/usr/local/anthropic-tunnel/var/cache.db", "store_fakeip": true }
+  }
+}

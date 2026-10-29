@@ -1,0 +1,14 @@
+[Unit]
+Description=Anthropic tunnel DNS layer (six apexes -> sing-box only, fail-closed)
+After=systemd-resolved.service
+Wants=systemd-resolved.service
+Before=anthropic-tunnel.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/anthropic-tunnel/bin/dns-layer.sh up
+ExecStop=/usr/local/anthropic-tunnel/bin/dns-layer.sh down
+
+[Install]
+WantedBy=multi-user.target

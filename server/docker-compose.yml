@@ -1,0 +1,30 @@
+# anthropic-tunnel server stack. Standalone; touches nothing else on the host.
+# Remove completely with:  docker compose down -v
+#
+# network_mode: host is deliberate (decided 2026-10-28): the host carries a
+# raw-table "tcp dport 443 notrack" rule owned by another tenant's tool, which
+# makes Docker's bridge NAT impossible for port 443. Host networking needs no
+# NAT. The container still binds only UDP 51820. See spec/03-server.md.
+name: anthropic-tunnel
+
+services:
+  sing-box:
+    image: ghcr.io/sagernet/sing-box:v1.14.4
+    container_name: anthropic-tunnel-sing-box
+    restart: unless-stopped
+    command: ["-D", "/var/lib/sing-box", "-C", "/etc/sing-box", "run"]
+    volumes:
+      - ./sing-box/config.json:/etc/sing-box/config.json:ro
+      - sing-box-data:/var/lib/sing-box
+    network_mode: host          # binds only UDP 51820 (WireGuard, phase 1)
+    mem_limit: 128m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  sing-box-data:
+    name: anthropic-tunnel-data

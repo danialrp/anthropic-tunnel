@@ -1,0 +1,20 @@
+[Unit]
+Description=Anthropic tunnel (sing-box TUN, fail-closed)
+Documentation=file:///usr/local/anthropic-tunnel/README
+After=network-online.target systemd-resolved.service anthropic-tunnel-dns.service
+Wants=network-online.target
+Requires=anthropic-tunnel-dns.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/anthropic-tunnel/bin/sing-box run -c /usr/local/anthropic-tunnel/etc/config.json -D /usr/local/anthropic-tunnel/var
+WorkingDirectory=/usr/local/anthropic-tunnel/var
+Restart=always
+RestartSec=2
+LimitNOFILE=65536
+# Runs as root, like the macOS launchd daemon: the TUN, routes, policy rules
+# and the DNS listener on 172.19.0.9:5553 (the dummy link address, created by
+# anthropic-tunnel-dns.service) are all created by this process.
+
+[Install]
+WantedBy=multi-user.target

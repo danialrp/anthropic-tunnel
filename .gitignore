@@ -1,0 +1,36 @@
+# Secrets: keys, passwords, generated configs with credentials
+secrets/
+private/
+*.key
+*.pem
+*.env
+.env*
+!.env.example
+**/private.key
+**/preshared.key
+
+# Rendered configs (generated from templates + secrets)
+**/config.rendered.json
+client/sing-box/config.json
+server/sing-box/config.json
+
+# macOS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Logs and runtime
+logs/
+*.log
+*.pid
+__pycache__/
+*.pyc
+
+# Private details (identities, tenants, Mac environment); local only
+spec/private.md
+
+# Rendered Linux client config
+client-linux/sing-box/config.json
+
+# Linux sing-box binary cached by install.sh
+client-linux/bin/
