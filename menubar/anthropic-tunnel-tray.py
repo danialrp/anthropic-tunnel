@@ -156,6 +156,8 @@ class TunnelIndicator(Gtk.Application):
             status = "Disabled: Anthropic traffic goes DIRECT"
         elif not info["running"] or not info["api"]:
             status = "Daemon stopped, starting, or API unreachable"
+        elif info.get("warning"):
+            status = info["warning"]
         elif state == "red":
             status = f"Tunnel DOWN via {info['selector']}: Anthropic traffic BLOCKED"
         else:

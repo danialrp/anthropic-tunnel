@@ -97,8 +97,9 @@ Three things keep it fail-closed:
   Linux a permanent dummy link carries systemd-resolved routing domains for
   the same six names. When sing-box is not running, those names do not
   resolve at all, and old fake addresses have no route.
-- **Leak guard (macOS).** A packet filter (pf) refuses every packet to an
-  Anthropic address unless it leaves through the tunnel interface. It holds
+- **Leak guard.** A packet filter (pf on macOS, nftables on Linux) refuses
+  every packet to an Anthropic address unless it leaves through the tunnel
+  interface. It holds
   when sing-box is down, when another VPN takes the routes, and when an app
   resolves names itself and connects to a real IP. A root job re-checks it
   every 5 seconds and keeps the address list current through the tunnel.

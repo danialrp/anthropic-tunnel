@@ -102,6 +102,6 @@ with os.fdopen(fd, "w") as f:
     f.write("\n")
 PY
 CHECK_BIN="$ROOT/client-linux/bin/sing-box"
-[ -x "$CHECK_BIN" ] || CHECK_BIN=sing-box
+"$CHECK_BIN" version >/dev/null 2>&1 || CHECK_BIN=sing-box   # the cached Linux binary cannot run when rendering on macOS
 "$CHECK_BIN" check -c "$OUT"
 echo "rendered and validated $OUT"

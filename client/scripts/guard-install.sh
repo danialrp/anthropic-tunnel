@@ -11,9 +11,10 @@ need_root
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 [ -f "$PLIST" ] || { echo "client not installed: run client/scripts/install.sh first" >&2; exit 1; }
 
-for s in common.sh guard.sh guard-ips.sh guard-off.sh tunnel-up.sh tunnel-down.sh tunnel-restart.sh status.sh uninstall.sh; do
+for s in common.sh guard.sh guard-off.sh tunnel-up.sh tunnel-down.sh tunnel-restart.sh status.sh uninstall.sh; do
   install -o root -g wheel -m 755 "$REPO/client/scripts/$s" "$BIN/$s"
 done
+install -o root -g wheel -m 755 "$REPO/shared/guard-ips.sh" "$BIN/guard-ips.sh"
 for l in "$GUARD_LABEL" "$GUARD_REFRESH_LABEL"; do
   plutil -lint -s "$REPO/client/launchd/$l.plist"
   install -o root -g wheel -m 644 "$REPO/client/launchd/$l.plist" "/Library/LaunchDaemons/$l.plist"

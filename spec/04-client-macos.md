@@ -134,7 +134,7 @@ leaves through our own utun.
   resolve to 160.79.104.10 as of 2026-10-29), and sing-box's fake-IP ranges.
 - **Dynamic addresses**: hosts outside that range (Google Cloud load
   balancers for assets.claude.ai, downloads.claude.ai, a-cdn.anthropic.com on
-  2026-10-29). `client/scripts/guard-ips.sh` resolves a fixed host list plus every
+  2026-10-29). `shared/guard-ips.sh` (used by both clients) resolves a fixed host list plus every
   Anthropic host seen in current connections through sing-box's local API
   (`/dns/query`, which answers through the tunnel), and skips any host whose
   answer has a CNAME outside the six Anthropic domains, because such

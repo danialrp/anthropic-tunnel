@@ -1,0 +1,8 @@
+[Unit]
+Description=Anthropic tunnel leak guard: refresh dynamic addresses through the tunnel
+After=anthropic-tunnel-guard.service anthropic-tunnel.service
+Requisite=anthropic-tunnel-guard.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/anthropic-tunnel/bin/guard.sh refresh

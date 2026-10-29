@@ -1,8 +1,8 @@
 #!/bin/bash
 # Print the addresses of Anthropic hosts that lie outside Anthropic's own
 # ranges (for example cloud load balancers), one per line, resolved THROUGH
-# the tunnel by sing-box's local API. Used by the macOS leak guard (pf) to
-# keep its block list current.
+# the tunnel by sing-box's local API. Used by the leak guard on every client
+# (macOS pf, Linux nftables) to keep its block list current.
 #   guard-ips.sh <clash-api-secret-file> [api-base-url]
 # Exit 1 when the local API does not answer: the caller keeps its last list.
 # A host whose answer contains a CNAME outside the six Anthropic domains is

@@ -26,9 +26,10 @@ In scope
 - Menu bar indicator (SwiftBar) with state colours, live stats, manual control.
 - Protocols: WireGuard first; VLESS+Reality added as a second transport because
   The operator switches between internet connections and some block WireGuard.
-- A packet-level leak guard on macOS (pf, spec/04): nothing reaches an
-  Anthropic address except through the tunnel, even with the daemon down or
-  another VPN active.
+- A packet-level leak guard on each client (macOS pf, spec/04; Linux
+  nftables, spec/08): nothing reaches an Anthropic address except through
+  the tunnel, even with the daemon down or another VPN active. macOS is the
+  tested and maintained client; Linux passed the container test.
 
 Out of scope
 - Routing non-Anthropic traffic through the server.

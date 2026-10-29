@@ -17,6 +17,7 @@ SHA_arm64="436441f76ee2f7fe21b5b2d426d3cb261a480455a704865789ad533e4273ec26"
 command -v resolvectl >/dev/null || { echo "systemd-resolved (resolvectl) is required" >&2; exit 1; }
 command -v python3 >/dev/null || { echo "python3 is required" >&2; exit 1; }
 command -v ip >/dev/null || { echo "iproute2 (ip) is required" >&2; exit 1; }
+command -v nft >/dev/null || { echo "nftables (nft) is required for the leak guard: sudo apt install nftables" >&2; exit 1; }
 [ -s "$REPO/client-linux/sing-box/config.json" ] || { echo "rendered config missing: client-linux/sing-box/config.json (render on the Mac, copy here)" >&2; exit 1; }
 
 # sing-box binary: repo-local copy if present, else download the pinned release tarball
@@ -47,10 +48,11 @@ install -d -o root -g root -m 755 "$BASE" "$BIN" "$ETC"
 install -d -o root -g root -m 700 "$VAR"
 install -o root -g root -m 755 "$SRC_BIN" "$BIN/sing-box"
 install -o root -g root -m 600 "$REPO/client-linux/sing-box/config.json" "$ETC/config.json"
-for s in common.sh dns-layer.sh tunnel-up.sh tunnel-down.sh tunnel-restart.sh status.sh uninstall.sh; do
+for s in common.sh dns-layer.sh guard.sh tunnel-up.sh tunnel-down.sh tunnel-restart.sh status.sh uninstall.sh; do
   install -o root -g root -m 755 "$REPO/client-linux/scripts/$s" "$BIN/$s"
 done
-for u in "$UNIT" "$DNS_UNIT"; do
+install -o root -g root -m 755 "$REPO/shared/guard-ips.sh" "$BIN/guard-ips.sh"
+for u in "$UNIT" "$DNS_UNIT" "$GUARD_UNIT" anthropic-tunnel-guard-refresh.service "$GUARD_TIMER"; do
   install -o root -g root -m 644 "$REPO/client-linux/systemd/$u" "$UNIT_DIR/$u"
 done
 printf 'anthropic-tunnel client %s. Scripts in %s. Docs: spec/08-client-linux.md in the repo.\n' "$VERSION" "$BIN" > "$BASE/README"
@@ -94,9 +96,11 @@ PY
 then
   bash "$REPO/client-linux/scripts/install-xhttp.sh"
 fi
-systemctl enable --quiet "$DNS_UNIT" "$UNIT"
+systemctl enable --quiet "$GUARD_UNIT" "$GUARD_TIMER" "$DNS_UNIT" "$UNIT"
+systemctl restart "$GUARD_UNIT"
 systemctl restart "$DNS_UNIT"
 systemctl restart "$UNIT"
+systemctl restart "$GUARD_TIMER"
 sleep 3
 echo "--- installed. version: $("$BIN/sing-box" version | head -1)"
 bash "$BIN/status.sh"

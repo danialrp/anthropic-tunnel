@@ -201,7 +201,7 @@ for client credentials and the English `MANUAL.md` for operator commands.
 Parse indicator inputs as JSON: the new renderer uses multiline output and
 VLESS-only configs have no WireGuard peer from which to extract an address.
 
-## 2026-10-29 · Packet-level leak guard on macOS (pf)
+## 2026-10-29 · Packet-level leak guard on each client (macOS pf, Linux nftables)
 Why: with another VPN active, or with sing-box down and an app that resolves
 names itself (DNS over HTTPS) and connects to a real address, the DNS layer
 alone cannot stop a direct connection. A filter below the routing decision
@@ -210,7 +210,7 @@ TUN, whatever owns the routes. Addresses: Anthropic's own ranges, sing-box
 fake-IP ranges, and load-balancer addresses of Anthropic hosts resolved
 through the tunnel. Hosts behind shared CDNs are excluded so unrelated sites
 never break. Rules sit in our own pf anchor under Apple's com.apple/* hook
-(no edit to /etc/pf.conf); a 5 s check on
+(no edit to /etc/pf.conf) and in our own nftables table on Linux; a 5 s check on
 macOS repairs pf being disabled, Apple's ruleset being flushed and the utun
 number changing. The installer self-tests and rolls itself back if Anthropic
 stops answering through the tunnel. Rejected: matching packets by source

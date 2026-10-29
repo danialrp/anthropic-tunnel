@@ -37,12 +37,13 @@ chosen (never "latest").
 | Indicator | Python GTK 3 + AppIndicator tray, shared Python status backend, desktop autostart | works with Ubuntu AppIndicators on Wayland; no Argos/logout; requires system GI bindings |
 | Test rig | Docker Desktop on the Mac, `tests/linux-container/` (Ubuntu 24.04 + systemd, privileged) | the only Linux available here; limits in spec/08 |
 
-## Leak guard, macOS (2026-10-29)
+## Leak guard (2026-10-29)
 
 | Piece | Choice | Why |
 |---|---|---|
 | macOS | pf, own anchor `com.apple/250.anthropic-tunnel`, two launchd jobs (5 s apply, 5 min refresh) | built in; no edit to /etc/pf.conf; survives other apps disabling pf or flushing rules within 5 s |
-| Address list | `client/scripts/guard-ips.sh` (bash + curl) via sing-box `/dns/query` | resolves through the tunnel; no new dependency |
+| Linux | nftables table `inet anthropic_guard`, oneshot unit + 60 s timer | built in on Ubuntu (`nftables` package); atomic reloads; oifname is stable |
+| Address list | `shared/guard-ips.sh` (bash + curl) via sing-box `/dns/query` | resolves through the tunnel; no new dependency; same script on every client |
 
 ## Menu bar
 

@@ -1,0 +1,15 @@
+[Unit]
+Description=Anthropic tunnel leak guard (nftables: Anthropic addresses only through the tunnel)
+DefaultDependencies=no
+After=local-fs.target
+Before=network-pre.target anthropic-tunnel.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/anthropic-tunnel/bin/guard.sh up
+ExecStop=/usr/local/anthropic-tunnel/bin/guard.sh down
+
+[Install]
+WantedBy=multi-user.target

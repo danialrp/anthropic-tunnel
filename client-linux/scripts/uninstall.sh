@@ -9,6 +9,9 @@ main() {
   need_root
   systemctl disable --now --quiet "$UNIT" "$DNS_UNIT" 2>/dev/null || true
   systemctl disable --now --quiet anthropic-tunnel-xhttp.service 2>/dev/null || true
+  systemctl disable --now --quiet "$GUARD_TIMER" "$GUARD_UNIT" 2>/dev/null || true
+  nft delete table inet "$GUARD_TABLE" 2>/dev/null || true
+  rm -f "$UNIT_DIR/$GUARD_UNIT" "$UNIT_DIR/$GUARD_TIMER" "$UNIT_DIR/anthropic-tunnel-guard-refresh.service"
   if dns_layer_up; then resolvectl revert "$DNS_LINK" 2>/dev/null || true; ip link del "$DNS_LINK" || true; fi
   rm -f "${UNIT_DIR:?}/${UNIT:?}" "${UNIT_DIR:?}/${DNS_UNIT:?}" "${SUDOERS:?}" "${NM_CONF:?}"
   rm -f "$UNIT_DIR/anthropic-tunnel-xhttp.service" "$UNIT_DIR/$UNIT.d/xhttp.conf"

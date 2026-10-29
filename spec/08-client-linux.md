@@ -438,6 +438,37 @@ Results 2026-10-29 (arm64 image, Docker Desktop):
   not from an outside observer.
 - WireGuard from the Linux client (needs the server peer).
 
+## Leak guard (nftables, since 2026-10-29)
+
+Same purpose as the macOS guard (spec/04): every outgoing or forwarded packet
+to an Anthropic address is refused unless it leaves through `anthropic-tun0`.
+
+- Table `inet anthropic_guard`, chains `guard_output` (hook output) and
+  `guard_forward` (hook forward, covers containers and VMs), priority -10:
+  `oifname "anthropic-tun0" accept`, then `reject` for the sets `static4`
+  (160.79.104.0/21, 198.18.0.0/15), `static6` (2607:6bc0::/48, 2001:2::/48),
+  `dyn4`, `dyn6`. Loaded atomically by `client-linux/scripts/guard.sh up`.
+- Dynamic sets come from `shared/guard-ips.sh` through sing-box's local API,
+  exactly as on macOS; kept in `/usr/local/anthropic-tunnel/var/guard-dynamic.txt`
+  and reloaded at boot, so the last list holds before the tunnel is up.
+- Units: `anthropic-tunnel-guard.service` (oneshot, `DefaultDependencies=no`,
+  before `network-pre.target` and the tunnel; `ExecStop` removes the table)
+  and `anthropic-tunnel-guard-refresh.timer` (30 s after boot, then every
+  60 s). Runs are serialized with `flock`. Status file for the indicator:
+  `/usr/local/anthropic-tunnel/etc/guard-status`.
+- `tunnel-down.sh` stops the guard (grey, direct on purpose); `tunnel-up.sh`
+  starts it; `uninstall.sh` removes table, units and files. Requires the
+  `nftables` package (install.sh checks).
+- Container test 2026-10-29 (`tests/linux-container/run.sh`): table loaded
+  at boot before the DNS layer and the tunnel; real-IP access with the tunnel
+  up goes into the TUN (401); a policy rule sending 160.79.104.0/21 to the
+  physical link (as another VPN or a route change would) is refused in under
+  1 ms while GitHub stays 200; with the daemon stopped, real-IP access to
+  api.anthropic.com and downloads.claude.ai is refused at once; an IPv6
+  Anthropic prefix routed to a non-tunnel link hits the IPv6 rule (counter
+  0 to 2); two concurrent refreshes serialize; tunnel-down removes the table
+  and tunnel-up restores it; uninstall leaves no table, unit or file.
+
 ## Open points
 
 See `spec/todo.md`: deploy the Linux WireGuard peer on the server (needs
