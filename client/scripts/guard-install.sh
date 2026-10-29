@@ -32,7 +32,7 @@ bash "$BIN/guard.sh" apply
 echo "--- self-test"
 rc=0; bash "$BIN/guard.sh" selftest || rc=$?
 case "$rc" in
-  0) echo "leak guard ON and verified"; bash "$BIN/guard.sh" status | head -12 ;;
+  0) echo "leak guard ON and verified"; bash "$BIN/guard.sh" status ;;
   2) echo "Anthropic does not answer through the tunnel with the guard on: rolling back" >&2
      guard_stop; echo "guard removed; tunnel unchanged" >&2; exit 1 ;;
   3) echo "WARNING: the guard is loaded but the probe was not refused; check: sudo bash $BIN/guard.sh status" >&2; exit 1 ;;

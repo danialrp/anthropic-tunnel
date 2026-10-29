@@ -91,6 +91,15 @@ sudo resolvectl revert anthropic-dns0; sudo ip link del anthropic-dns0
 | T12 | Another VPN connected (or `sudo route add -net 160.79.104.0/21 <LAN gateway>` as a stand-in, removed right after) | every Anthropic connection is refused at once; `sudo bash /usr/local/anthropic-tunnel/bin/guard.sh status` shows the block counters rising; other sites work |
 | T13 | System proxy switched on in System Settings | indicator red `PROXY` with a notification; off again → normal |
 
+Results on the operator's Mac, 2026-10-29:
+
+| # | Result |
+|---|---|
+| T11 | PASS. Self-test: Anthropic 401 through the tunnel; fake-IP probe on en0 refused after 0.002 s. Anchor loaded with pass on utun7; static table 4 ranges, dynamic table 3 addresses. Indicator: `Leak guard: on, 3 extra addresses`. |
+| T12 (stand-in) | PASS. Requests forced out of en0 around the tunnel (`curl --interface en0` with the real address): api.anthropic.com and claude.ai (160.79.104.10), a-cdn (34.36.57.103), downloads (35.190.46.17) all refused in under 0.001 s; github.com on the same path 200. A real second VPN is still to be tried. |
+| T5 with guard | PASS. `tunnel-restart.sh`: Anthropic back within 1 s, guard pass interface follows the tunnel utun, en0 bypass still refused. |
+| T13 | open (needs a system proxy switched on by hand) |
+
 Linux equivalents run in the container test and in the Linux runbook.
 
 ## Operational rule: other VPN apps
