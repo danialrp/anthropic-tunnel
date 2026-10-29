@@ -1,7 +1,7 @@
 #!/bin/bash
 # Fail-closed DNS layer (Linux equivalent of the macOS /etc/resolver files).
 # A persistent dummy link carries systemd-resolved "routing domains" for the
-# six Anthropic apexes, with the sing-box DNS listener on loopback as its only
+# six Anthropic apexes, with the sing-box DNS listener on that link as its only
 # server. Names under those domains are never sent to any other DNS server.
 # When sing-box is down the listener is closed and those names fail to resolve.
 #   dns-layer.sh up | down | status

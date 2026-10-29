@@ -1,10 +1,194 @@
 # 08 — Client (Ubuntu Linux)
 
-**Status (2026-10-29):** written and tested in a systemd Ubuntu 24.04 container
-on the Mac (Docker Desktop, arm64). Not yet run on a real Ubuntu machine; the
-open points are listed at the end and in `spec/todo.md`. Same rules, same
+**Status (2026-10-29):** container tests passed on Ubuntu 24.04 arm64; the
+VLESS client is now installed and running on a real Ubuntu workstation.
+TUN/DNS startup and an API request passed; real-host failure and reboot tests
+remain open in `spec/todo.md`. Same rules, same
 behaviour as the macOS client (spec/04): all Anthropic traffic through the
 tunnel, fail-closed, nothing else touched.
+
+## Real-machine preparation (2026-10-29)
+
+A Linux workstation has been prepared using the existing project VLESS/Reality
+listener on TCP 8444. The pinned amd64 archive passed SHA256 verification,
+`sing-box check` passed, and a temporary unprivileged SOCKS probe reached
+`https://api.anthropic.com/v1/models` through VLESS and returned HTTP 401.
+The probe had only a VLESS outbound and was removed afterwards; it did not
+change system routing. The user then installed the client with interactive sudo. Initial startup
+failed because another VPN TUN had been enabled again and owned routing table
+2022. After the user disabled that TUN, restarting only
+`anthropic-tunnel.service` succeeded. Observed: daemon active/running,
+`NRestarts=0` after restart, all six DNS routing domains, TUN up, `claude.ai`
+resolved to a fake IP, and the API returned HTTP 401 with `vless-out` in the
+daemon log. Full real-host fail-closed and reboot tests remain pending.
+Environment-specific details are in `private/notes.md`.
+
+The Linux defaults now use `172.30.250.1/30` for the TUN,
+`172.30.250.2` for its internal DNS target and `172.30.250.9/32` for the
+persistent DNS link (listener port 5553). The previous `172.19.0.1` conflicts
+with a Docker bridge on this workstation. These new addresses were checked
+against its existing interfaces; check for overlap again on other machines.
+The historical container results below used the original addresses.
+The macOS addresses are unchanged.
+
+For a VLESS-only installation, put `server.env` (`SERVER_IP=...`),
+`vless-uuid`, `reality.pub`, `reality-shortid` and `clash-api.secret` in
+`private/secrets/`, then run:
+
+```bash
+bash client-linux/render.sh --vless-only
+sudo bash client-linux/scripts/install.sh
+bash /usr/local/anthropic-tunnel/bin/status.sh
+```
+
+The renderer uses the cached `client-linux/bin/sing-box` when available,
+otherwise `sing-box` on PATH. It requires Python 3, writes the generated
+config with mode 600 and checks it before reporting success. This mode omits
+WireGuard entirely and starts with `vless-out` in the selector, so an undeployed
+Linux peer cannot be selected accidentally. Optional imported profiles are
+appended as described below. The default invocation still
+renders both transports and requires all WireGuard secrets. Do not rerender a
+VLESS-only setup without the flag. The installer starts the services immediately.
+The cached binary must come from the pinned release; the installer trusts an
+existing executable in `client-linux/bin/`.
+
+Rollback after installation: `sudo bash client-linux/scripts/uninstall.sh`.
+This removes the tunnel and restores ordinary DNS/direct access; it is not a
+fail-closed pause. To stop only the daemon while retaining its DNS block, use
+`sudo systemctl stop anthropic-tunnel` and leave the DNS unit running.
+
+## Imported server profiles (2026-10-29)
+
+`private/secrets/extra-outbounds.json` is an optional array of additional VLESS
+outbounds and authenticated loopback SOCKS helpers. Both render modes append
+these profiles to the `anthropic` selector without changing its default,
+DNS rules, routing rules or direct outbound. This keeps imported credentials
+out of tracked files and preserves them when re-rendering. Duplicate/reserved
+tags, direct outbounds, TLS `insecure: true` and unauthenticated/non-loopback
+SOCKS helpers are rejected before replacing the generated config.
+
+The current import contains the project's existing VLESS profile plus five
+server profiles. Private inventory, credentials and probe results are in
+`private/notes.md` and `private/secrets/`; no server configuration was changed. A
+WireGuard profile is not added until this Linux machine has its own server
+peer. The Mac peer must not be reused.
+
+The two imported TLS profiles use SPKI SHA256 pins derived from certificates
+retrieved over authenticated SSH. Pin verification replaces ordinary CA/name/
+expiry validation for these profiles; it never accepts an arbitrary peer.
+One profile's CA certificate is expired and the other is self-signed. Wrong-pin
+probing confirmed rejection (`unrecognized remote public key`). A changed
+server public key requires updating the pin from a trusted source. See the
+[official TLS fields](https://sing-box.sagernet.org/configuration/shared/tls/#certificate_public_key_sha256).
+The imported origin WebSocket/XHTTP routes have no outer TLS; destination
+HTTPS remains end-to-end, but the proxy metadata and any non-TLS payload are
+not encrypted on the client-to-origin hop.
+
+### XHTTP helper
+
+The pinned sing-box build does not support XHTTP natively (see the
+[official transport list](https://sing-box.sagernet.org/configuration/shared/v2ray-transport/)).
+A dedicated Xray process provides only that transport, behind authenticated
+SOCKS at `127.0.0.1:19080`. It has no TUN, route changes or direct fallback.
+Its outbound connects to the imported server's existing XHTTP reverse proxy.
+`private/secrets/xhttp-client.json` supplies its credentials. The Linux binary is
+cached at `client-linux/bin/xray`, copied over authenticated SSH from the
+existing server, with SHA256 checked locally against the remote binary:
+
+- Xray 26.3.27, revision d2758a0, linux/amd64.
+- SHA256: `8255dd939c34cf966cc91517b6324dd3c8d0bcf49ffac8beca049a38c46845ed`.
+- This optional helper pin covers amd64 only; a separate verified binary/pin
+  is required for an arm64 XHTTP installation.
+
+`install-xhttp.sh` installs the binary, root-only `etc/xhttp.json`, and
+`anthropic-tunnel-xhttp.service`. systemd supplies the config through
+`LoadCredential`; Xray runs as a dynamic unprivileged user. A project-only
+`anthropic-tunnel.service.d/xhttp.conf` adds Wants/After dependencies so the
+helper starts with the main tunnel. Other transports remain independent of
+helper availability. Full client uninstall removes the helper, drop-in and
+credentials too.
+
+### Apply and rollback
+
+```bash
+bash client-linux/render.sh --vless-only
+sudo bash client-linux/scripts/apply-config.sh
+```
+
+The apply script validates the main config with the installed binary, installs
+and validates the optional helper, and saves the previous main config as
+`/usr/local/anthropic-tunnel/etc/config.before-profiles.json` (root 600).
+If the tunnel is active it restarts only that daemon, retaining DNS protection,
+and restores the backup if startup fails. If the tunnel is inactive, it installs
+the profiles/helper without starting either service. It preserves enablement.
+Disable other VPN TUNs before using Connect afterwards.
+
+To restore the previous main config while the tunnel is active:
+
+```bash
+sudo install -o root -g root -m 600 /usr/local/anthropic-tunnel/etc/config.before-profiles.json /usr/local/anthropic-tunnel/etc/config.json
+sudo /usr/local/anthropic-tunnel/bin/tunnel-restart.sh
+```
+
+Validated before applying: sing-box schema checks, Xray config test, systemd
+unit syntax, authenticated HTTP API probes (401) and UDP DNS answers for all
+six profiles, plus wrong-pin rejection. WebSocket's first UDP probe timed out;
+a focused retest passed using explicit `packet_encoding: xudp`. Probe daemons
+and files were removed. The imported config and helper are now installed: all six transports were
+observed in the live Clash API and the helper service is running. Full TUN
+transport switching and reboot tests remain pending.
+
+## Direct sites fail on an IPv4-only uplink
+
+Observed on 2026-10-29: Google HTTPS returned HTTP 200 with `curl -4`, but
+ordinary curl and `curl -6` reset during TLS. The physical link had no IPv6
+default route; the TUN supplied a synthetic ULA IPv6 address and accepted
+connections that its direct outbound could not deliver (`network is unreachable`).
+This can prevent applications from falling back to IPv4 after TCP has appeared
+to connect.
+
+For this machine, `private/secrets/linux-options.json` now contains:
+
+```json
+{"ipv4_only": true}
+```
+
+Rendering with this local option removes only the IPv6 address from the TUN;
+it preserves the shared dual-stack template, all profiles, DNS and routing
+rules. It does not disable IPv6 globally or send Google through the tunnel.
+Use only on a host without native IPv6 connectivity; if the uplink gains IPv6,
+remove the option (or set it false) and restore dual-stack TUN capture.
+
+```bash
+bash client-linux/render.sh --vless-only
+sudo bash client-linux/scripts/apply-config.sh
+```
+
+The IPv4-only config passed sing-box validation and a render comparison proved
+only the TUN address list changed. After the user applied it, ordinary Google
+HTTPS returned HTTP 200. The active IPv6 policy contains an unreachable rule
+with strict routing; the TUN no longer advertises a global/ULA IPv6 address.
+The config apply script keeps DNS protection active and saves the previous
+config for rollback.
+
+## Startup failure: route already exists
+
+If the journal reports `set routes: add route 0: file exists`, inspect both
+`ip -4 route show table 2022` and `ip -brief link show`. Another sing-box TUN
+can occupy the same default routing table even when no policy rules are
+visible between failed startup attempts. Disable the other VPN's TUN mode in
+its own application, verify its interface is gone, then run:
+
+```bash
+sudo /usr/local/anthropic-tunnel/bin/tunnel-restart.sh
+bash /usr/local/anthropic-tunnel/bin/status.sh
+```
+
+The restart script is allowed without a password after installation and leaves
+the DNS protection unit running. Do not flush a shared routing table or remove
+another VPN's routes by hand. Keep only one TUN active for this deployment;
+coexistence has not been validated. A running daemon, six DNS domains, an up
+TUN, fake-IP resolution and API HTTP 401 are the expected basic health results.
 
 ## Pieces
 
@@ -12,7 +196,7 @@ tunnel, fail-closed, nothing else touched.
 |---|---|---|---|
 | sing-box 1.14.4 (TUN + DNS listener) | root | systemd `anthropic-tunnel.service` | routing, DNS, kill switch |
 | DNS layer | root (oneshot) | systemd `anthropic-tunnel-dns.service` | the six apexes resolve only through sing-box, even when it is down |
-| Indicator | user | Argos (GNOME Shell extension) | same plugin file as macOS, `menubar/anthropic-tunnel.5s.py` |
+| Indicator | user | GTK/AppIndicator + desktop login entry | Linux tray frontend reuses `menubar/anthropic-tunnel.5s.py` status/actions |
 
 Files: `client-linux/` (config template, render.sh, systemd units,
 scripts), `menubar/install-linux.sh`, `tests/linux-container/`. The
@@ -20,6 +204,9 @@ step-by-step runbook for the agent on the Ubuntu machine, including the
 real-machine test matrix L1–L12, is `client-linux/README.md`.
 
 ## sing-box config (`client-linux/sing-box/config.template.json`)
+
+The design notes below describe the original container-tested addresses; use
+the updated Linux addresses in the preparation section for the current files.
 
 Identical to the macOS template except:
 
@@ -118,7 +305,7 @@ the two links. Not yet verified on a real Desktop (todo).
 | /usr/local/anthropic-tunnel/bin/*.sh | common, dns-layer, tunnel-up, tunnel-down, tunnel-restart, status, uninstall | root 755 |
 | /usr/local/anthropic-tunnel/etc/config.json | rendered config (secrets inside) | root 600 |
 | /usr/local/anthropic-tunnel/etc/clash-api.secret | for the indicator | root:<user> 640 |
-| anthropic-dns0 (dummy link, 172.19.0.9/32) | DNS layer, created by the unit at boot | |
+| anthropic-dns0 (dummy link, 172.30.250.9/32) | DNS layer, created by the unit at boot | |
 | /usr/local/anthropic-tunnel/var/ | sing-box working dir, cache.db | root 700 |
 | /etc/systemd/system/anthropic-tunnel.service, anthropic-tunnel-dns.service | units, enabled | root 644 |
 | /etc/sudoers.d/anthropic-tunnel | `<user> ALL=(root) NOPASSWD:` the three up/down/restart scripts | root 440 |
@@ -164,24 +351,51 @@ closed, so the six domains fail to resolve and existing fake IPs
 (198.18.0.0/15) have no route. Verified: `kill -9` → new PID within 4 s,
 `NRestarts=1`, traffic back.
 
-## Indicator (Argos)
+## Indicator (GTK/AppIndicator on Wayland)
 
-Same plugin file as macOS. On Linux (`sys.platform`) it uses `systemctl
-is-enabled/is-active`, `ip`, `resolvectl`, `journalctl`, `notify-send`,
-`wl-copy`/`xclip` (or writes `~/anthropic-tunnel-diagnostics.txt`), and
-emits BitBar-format output: single dark-theme colour instead of SwiftBar's
-light,dark pair, no `sfimage`/`sfcolor`/`disabled`/`checked`/`font`
-parameters, the active transport marked with ✓ in its label. Secret read from
-`/usr/local/anthropic-tunnel/etc/clash-api.secret`. The macOS branch of the
-file is untouched in behaviour: its SwiftBar output was diffed before and
-after the change (identical apart from volatile numbers) and the installed
-copy re-checked. `menubar/install-linux.sh`
-copies it to `~/.config/argos/anthropic-tunnel.5s.py` with a
-`/usr/bin/python3` interpreter line and prints how to install Argos (from its
-git master, which supports GNOME 45–51; the extensions.gnome.org listing is
-stale). Verified in the container: output format, states green/grey, the
-transport, diag and flush actions. Not verified: rendering inside GNOME
-Shell itself (no GNOME in the container; todo).
+`menubar/anthropic-tunnel-tray.py` provides the Linux tray frontend. It imports
+status, icons, notifications and diagnostics from `anthropic-tunnel.5s.py`,
+which remains the macOS SwiftBar frontend. On Ubuntu GNOME the existing Ubuntu
+AppIndicators extension renders its StatusNotifierItem over the session D-Bus.
+Argos is no longer required, and installation needs neither sudo nor logout.
+Other Wayland desktops need their own StatusNotifierItem host; Wayland alone
+does not supply a tray.
+
+Requirements: system Python 3 with PyGObject, GTK 3 introspection, and either
+AyatanaAppIndicator3 or AppIndicator3 introspection. Both namespace variants
+are supported. These dependencies were already present on the tested machine.
+
+```bash
+bash menubar/install-linux.sh
+# Relaunch manually, or search for Anthropic Tunnel in Applications:
+~/.local/bin/anthropic-tunnel-indicator
+# Quit only the indicator; the tunnel keeps running:
+~/.local/bin/anthropic-tunnel-indicator --quit
+# Remove the indicator and its login entry:
+bash menubar/uninstall-linux.sh
+```
+
+The installer copies the frontend/backend to
+`~/.local/share/anthropic-tunnel/`, adds the launcher under `~/.local/bin/`, and
+writes `anthropic-tunnel.desktop` in both `~/.local/share/applications/` and
+`~/.config/autostart/`. XDG overrides are honored for data/config/state/cache.
+The old plugin `~/.config/argos/anthropic-tunnel.5s.py`, if present, is renamed
+to `.anthropic-tunnel.5s.py.disabled`; other Argos plugins are untouched.
+
+The indicator reads the installed Clash secret, refreshes every five seconds,
+and keeps slow probes/actions off the GTK thread. It offers connection status,
+connect/disconnect/restart, configured transports, aggregate statistics, log,
+diagnostics, DNS cache flush and quit. Disconnect explicitly allows direct
+access; quitting the indicator does not stop the tunnel. One D-Bus application
+ID prevents duplicate instances. State/log files live under
+`~/.local/state/anthropic-tunnel/`, icons under `~/.cache/anthropic-tunnel/`.
+
+Verified on 2026-10-29: dependency check, desktop-file validation, live GNOME
+registration with green icon/checkmark, exported menu showing a healthy VLESS
+connection, single-instance launch, quit/relaunch and uninstall/reinstall without changing
+the tunnel PID. GTK selected the native Wayland display backend. Login autostart is configured but has not yet been tested across logout.
+The earlier container tests below exercised the Argos-compatible backend,
+not the new GTK frontend.
 
 ## Container test on the Mac (`tests/linux-container/`)
 
@@ -227,7 +441,26 @@ Results 2026-10-29 (arm64 image, Docker Desktop):
 ## Open points
 
 See `spec/todo.md`: deploy the Linux WireGuard peer on the server (needs
-The operator's go), first run on a real Ubuntu machine (Desktop with NetworkManager
-and, if used, Server with networkd), Argos in GNOME, optional
+the operator's go), remaining real-machine tests (failure, reboot, NetworkManager persistence
+and, if used, Server with networkd), indicator login autostart, optional
 `auto_redirect` (sing-box recommends it on Linux; it adds nftables rules and
 redirects port 53 by itself; evaluate after the real-machine run).
+
+## Live egress and startup verification (2026-10-29)
+
+After applying the IPv4-only option, two ordinary public-IP observers agreed
+on the direct connection's public IP. Both the Anthropic API and Claude's own
+`/cdn-cgi/trace` endpoints reported the configured server's public IP and US
+location. Google returned HTTP 200; live connection metadata showed direct
+routing. A review of the current daemon invocation found 53 tunnelled
+Anthropic log entries and zero direct matches among 421 lines. Exact IPs and
+the machine-specific audit record remain in `private/secrets/egress-audit.json`.
+These checks cover the sampled requests/logs, not every application/protocol.
+
+Both main and DNS units are enabled at boot; the main daemon uses
+`Restart=always` with a two-second delay. The persistent DNS unit has
+`RemainAfterExit=yes` and does not stop when the daemon crashes. This is
+DNS-based fail-closed protection for the configured suffixes, not a complete
+firewall guarantee against bypasses. Explicit Disconnect removes DNS
+protection and disables boot startup until Connect is used again. Real-host
+crash/reboot tests and tray login autostart testing remain open.

@@ -14,16 +14,16 @@
   CLAUDE.md. Rule added: no code without explicit permission. Stack proposal
   written in spec/07-stack.md, awaiting approval.
 - 2026-10-28 · Server pre-flight done (read-only, via password SSH through an
-  expect wrapper kept outside the repo; creds in secrets/server.env). Results in
+  expect wrapper kept outside the repo; creds in private/secrets/server.env). Results in
   spec/03. Findings needing the operator: a foreign SSH key on root (a
   colleague's), no host firewall, password root login enabled.
 - 2026-10-28 · The operator's public key appended to root
-  authorized_keys; key login verified. Password removed from secrets/server.env
+  authorized_keys; key login verified. Password removed from private/secrets/server.env
   and the expect wrapper deleted. Rules updated: shared server, no host config
   changes, no hardening.
 - 2026-10-28 · Rule 11 (US location) added; server verified US. sing-box 1.14.4
   installed on the Mac via brew. WireGuard keys, PSK and Clash API secret
-  generated into secrets/. server/docker-compose.yml, config template and
+  generated into private/secrets/. server/docker-compose.yml, config template and
   render.sh written; rendered config passes `sing-box check`. Not deployed.
 - 2026-10-28 · Server stack deployed to /opt/anthropic-tunnel. Found and fixed:
   foreign notrack rule breaks bridge NAT → host network; PMTU 1420 → MTU 1280.
@@ -72,7 +72,7 @@
 - 2026-10-28 · Rule 0 verified live across clients: Chrome sockets (lsof) go to fake IPs through the TUN; claude.ai, assets, s-cdn, assets-proxy, bridge, api, platform all on chain anthropic; zero Anthropic destinations ever on direct since install; hard-coded-IP and interface-bound bypass attempts cannot reach Anthropic directly.
 - 2026-10-28 · Docs refreshed to live state (01 rewritten, 06/07/README fixed), spec/todo.md created, operator manual written; rules 6 and 7 extended to cover the manual and todo list.
 - 2026-10-28 · T10 passed: after a Mac reboot the daemon, resolver files, TUN, menu bar and tunnel all came back without manual action. All acceptance tests closed except the real T8 run.
-- 2026-10-28 · Menu bar overflow found: the operator's ping plugin compacted and set to 10 s (backup kept), tunnel item narrowed to icon-only when idle. Not everything fit yet; remaining fix was the operator's (details in spec/private.md).
+- 2026-10-28 · Menu bar overflow found: the operator's ping plugin compacted and set to 10 s (backup kept), tunnel item narrowed to icon-only when idle. Not everything fit yet; remaining fix was the operator's (details in private/notes.md).
 - 2026-10-28 · The operator freed menu bar space; all items visible. Overflow item closed.
 - 2026-10-28 · Menu bar colours set to Apple system colours with bold title after dark tones were unreadable; a regex edit briefly broke the plugin header (restored from git); __pycache__ now git-ignored.
 - 2026-10-28 · Idle title was empty and SwiftBar hid the item; idle now shows a green ✓.
@@ -82,4 +82,68 @@
 - 2026-10-29 · `client-linux/README.md` written: the runbook for the agent on the Ubuntu machine (rules that apply there, read-only pre-flight, how the rendered config gets there, what install.sh changes, daily commands, VLESS-first until the server peer exists, tests L1–L12, Argos, known pitfalls, how to report back). Linked from CLAUDE.md, spec/08 and the manual.
 - 2026-10-29 · MIT license added.
 - 2026-10-29 · Public documentation: README.md rewritten as the full guide (purpose, how it works, domains, platform status, requirements, setup from an empty clone with a tested secrets block, daily use, revert and uninstall, limitations, working with an agent, documentation map); MANUAL.md written for macOS and Linux; server/.env.example matches the keys in use; plugin and icon generator use env python3 and the macOS installer pins the local interpreter.
-- 2026-10-29 · Operator data kept in the git-ignored `private/` folder (secrets/, notes.md, backups/); render scripts read `private/secrets/`; CLAUDE.md rule 4 and the README describe the convention. Fresh-clone test of the README secrets block passed.
+- 2026-10-29 · Operator data kept in the git-ignored `private/` folder (private/secrets/, notes.md, backups/); render scripts read `private/secrets/`; CLAUDE.md rule 4 and the README describe the convention. Fresh-clone test of the README secrets block passed.
+
+
+- 2026-10-29 · Prepared a real Linux workstation for VLESS: retrieved only the
+  project listener's client credentials over read-only SSH, derived the Reality
+  public key on the server without copying its private key, and generated a
+  separate local Clash API secret. Credentials and generated config remain
+  git-ignored. Added `render.sh --vless-only`, moved Linux TUN/DNS IPv4 addresses
+  away from a local Docker subnet, and updated the Linux indicator check.
+  Verified the pinned amd64 archive SHA256, config validation, and a temporary
+  SOCKS-to-VLESS API probe (HTTP 401); the probe was then removed. No server or
+  host network changes. Installation and real TUN/DNS tests await interactive
+  sudo authentication. Environment details are in `private/notes.md`.
+
+- 2026-10-29 · Real Linux installation completed by the user. Diagnosed the
+  daemon restart loop from `set routes: add route 0: file exists`: another VPN
+  TUN was active again and owned table 2022. The user disabled its TUN mode;
+  restarted only the project daemon through its installed sudoers action.
+  Verified active/running service, zero restarts after that restart, DNS 6/6,
+  TUN up, fake-IP resolution and Anthropic API HTTP 401 via vless-out. DNS
+  protection stayed active throughout. Full shutdown/recovery and reboot
+  tests remain open; no server changes.
+
+- 2026-10-29 · Installed Argos and its plugin, confirmed the plugin reported a
+  healthy VLESS connection; enabling Argos required a Wayland logout. At the
+  user's request, replaced the Linux UI with a GTK/AppIndicator frontend,
+  installed/launched it, added application/login entries and disabled only
+  this project's old Argos plugin. Verified live GNOME StatusNotifierItem
+  registration, connected menu, native Wayland GTK backend, single-instance
+  activation, quit/relaunch and uninstall/reinstall with unchanged tunnel PID. No sudo or tunnel/server changes. Login autostart
+  remains to be verified at the next login.
+
+- 2026-10-29 · Prepared all six VLESS client profiles from read-only server
+  inspection. Retained the project default; imported Reality, WebSocket, two
+  TLS profiles with trusted public-key pins, and XHTTP via a pinned local Xray
+  helper. Added persistent secret-profile merging, helper installation and a
+  config-only apply script with backup/startup rollback and off-state
+  preservation; uninstall removes the helper too. Config/API/DNS probes passed
+  (WebSocket UDP passed on focused retest); wrong-pin verification rejected the
+  peer. No server writes. Root installation of the imported profiles remains
+  pending interactive sudo. The installed project tunnel was observed disabled
+  while another TUN was active; preserved that state.
+
+- 2026-10-29 · Confirmed imported profiles and XHTTP helper installed: all six
+  choices visible in the live API, original VLESS selected, main/DNS/helper
+  services active. Diagnosed Google failure: IPv4 HTTP 200, ordinary/IPv6 TLS
+  reset, no physical IPv6 default route and direct outbound IPv6 errors.
+  Prepared persistent per-machine IPv4-only TUN rendering. Validated config
+  and confirmed no profile/DNS/routing rule changes. Applying this adjustment
+  and checking ordinary browser access await interactive sudo.
+
+- 2026-10-29 · User applied the IPv4-only TUN option. Verified ordinary Google
+  HTTP 200, matching direct public-IP observers, and server egress reported by
+  Anthropic API/Claude trace endpoints. Current-invocation audit: 53 tunneled
+  Anthropic entries, zero direct matches across 421 log lines. Verified boot
+  enablement and two-second restart policy; real crash/reboot tests remain
+  open. Prepared Linux client/profile/Wayland tray changes for pull-request
+  review; credentials, rendered configs, binaries and host-specific records
+  remain excluded from Git.
+
+- 2026-10-29 · Ported the Linux changes onto the replacement repository's
+  fresh main history. Preserved its public docs and macOS identifiers, adopted
+  `private/secrets/`, and integrated operating instructions into `MANUAL.md`
+  and the Linux runbook. Installer metadata now parses JSON for both VLESS-only
+  and WireGuard configurations. No live services were changed during the port.

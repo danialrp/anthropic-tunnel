@@ -1,8 +1,8 @@
 # 05 — Menu bar indicator (SwiftBar)
 
 SwiftBar plugin `menubar/anthropic-tunnel.5s.py` (Python 3, stdlib only; the
-same file also runs under Argos on Ubuntu GNOME, see spec/08 and
-`menubar/install-linux.sh`; on macOS nothing below changed on 2026-10-29),
+same file supplies the shared backend for the Linux GTK/AppIndicator tray,
+see spec/08 and `menubar/install-linux.sh`; the macOS frontend is unchanged),
 refresh 5 s, installed by `menubar/install.sh` (no sudo) into SwiftBar's
 plugin folder (`~/Documents/SwiftBar/Plugins`, the operator's existing choice).
 Reads sing-box Clash API on 127.0.0.1:9090 with the secret from
@@ -81,3 +81,13 @@ exactly those two scripts; recorded in decisions.md.
 On state change only (RED↔GREEN/YELLOW, GREY↔others): one macOS notification
 via `osascript display notification`, English, e.g. "Anthropic tunnel DOWN /
 Anthropic traffic is blocked (kill switch)".
+
+## Linux tray frontend (2026-10-29)
+
+Linux now uses `anthropic-tunnel-tray.py` and the desktop's AppIndicator host.
+It reuses the status logic and icons above, with a GTK menu and asynchronous
+probes, and starts via a desktop login entry. No Argos or GNOME Shell restart
+is needed. The Linux state file is `~/.local/state/anthropic-tunnel/indicator-state.json`.
+The menu labels explicitly distinguish disconnecting (allows direct access)
+from quitting the indicator (keeps the tunnel running). Installation, removal,
+verification and remaining login testing are documented in spec/08.

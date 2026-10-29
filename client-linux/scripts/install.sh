@@ -2,7 +2,7 @@
 # Install the anthropic-tunnel client on Ubuntu. Run with sudo from the repo:
 #   sudo bash client-linux/scripts/install.sh
 # Idempotent: re-running updates binary, config, scripts, units and restarts.
-# Needs: systemd, systemd-resolved (resolvectl), iproute2, curl or wget, and
+# Needs: systemd, systemd-resolved (resolvectl), iproute2, python3, curl or wget, and
 # client-linux/sing-box/config.json rendered where private/secrets/ lives (render.sh)
 # and copied here.
 set -eu
@@ -15,6 +15,7 @@ SHA_amd64="699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968"
 SHA_arm64="436441f76ee2f7fe21b5b2d426d3cb261a480455a704865789ad533e4273ec26"
 
 command -v resolvectl >/dev/null || { echo "systemd-resolved (resolvectl) is required" >&2; exit 1; }
+command -v python3 >/dev/null || { echo "python3 is required" >&2; exit 1; }
 command -v ip >/dev/null || { echo "iproute2 (ip) is required" >&2; exit 1; }
 [ -s "$REPO/client-linux/sing-box/config.json" ] || { echo "rendered config missing: client-linux/sing-box/config.json (render on the Mac, copy here)" >&2; exit 1; }
 
@@ -56,8 +57,18 @@ printf 'anthropic-tunnel client %s. Scripts in %s. Docs: spec/08-client-linux.md
 
 # indicator inputs: Clash API secret and server IP, readable by the installing user's group
 OWNER="${SUDO_USER:?run with sudo from your own user, not as root}"
-grep -oE '"secret": *"[^"]*"' "$ETC/config.json" | head -1 | sed -E 's/.*"secret": *"([^"]*)"/\1/' > "$ETC/clash-api.secret"
-grep -oE '"address": *"[^"]+", *"port": *[0-9]+' "$ETC/config.json" | head -1 | sed -E 's/.*"address": *"([^"]+)".*/\1/' > "$ETC/server-ip"   # the WireGuard peer address
+python3 - "$ETC" <<'PYTHON'
+import json, pathlib, sys
+etc = pathlib.Path(sys.argv[1])
+config = json.loads((etc / "config.json").read_text())
+(etc / "clash-api.secret").write_text(config["experimental"]["clash_api"]["secret"] + "\n")
+vless = next((item for item in config["outbounds"] if item.get("tag") == "vless-out"), {})
+server = vless.get("server", "")
+if not server:
+    wg = next((item for item in config.get("endpoints", []) if item.get("type") == "wireguard"), {})
+    server = next((peer["address"] for peer in wg.get("peers", []) if peer.get("address")), "")
+(etc / "server-ip").write_text(server + "\n")
+PYTHON
 chown "root:$(id -gn "$OWNER")" "$ETC/clash-api.secret" "$ETC/server-ip"; chmod 640 "$ETC/clash-api.secret" "$ETC/server-ip"
 
 # sudoers: the indicator may run exactly these three scripts without a password
@@ -75,6 +86,14 @@ if [ -d /etc/NetworkManager ]; then
 fi
 
 systemctl daemon-reload
+if python3 - "$ETC/config.json" <<'PY'
+import json, sys
+config = json.load(open(sys.argv[1]))
+sys.exit(0 if any(o.get("tag") == "vless-xhttp-80" for o in config["outbounds"]) else 1)
+PY
+then
+  bash "$REPO/client-linux/scripts/install-xhttp.sh"
+fi
 systemctl enable --quiet "$DNS_UNIT" "$UNIT"
 systemctl restart "$DNS_UNIT"
 systemctl restart "$UNIT"

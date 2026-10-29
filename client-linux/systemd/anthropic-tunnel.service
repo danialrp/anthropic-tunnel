@@ -13,7 +13,7 @@ Restart=always
 RestartSec=2
 LimitNOFILE=65536
 # Runs as root, like the macOS launchd daemon: the TUN, routes, policy rules
-# and the DNS listener on 172.19.0.9:5553 (the dummy link address, created by
+# and the DNS listener on 172.30.250.9:5553 (the dummy link address, created by
 # anthropic-tunnel-dns.service) are all created by this process.
 
 [Install]
