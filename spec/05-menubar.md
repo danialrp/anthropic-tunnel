@@ -31,6 +31,8 @@ system colours are the ones macOS itself uses on the bar.
 | DOWN (kill switch engaged) | red | daemon running but selected outbound unhealthy, or server TCP/UDP check fails; Anthropic traffic is being refused |
 | DISABLED by user | grey | launchd daemon not loaded; traffic goes direct knowingly |
 | UNKNOWN | grey with "?" | API unreachable while daemon reports running (transient) |
+| GUARD (since 2026-10-29, macOS) | red, title `GUARD` | tunnel enabled but the leak guard is missing, off, or its status older than 30 s; takes precedence over every other state |
+| PROXY (since 2026-10-29, macOS) | red, title `PROXY` | a system proxy (`scutil --proxy`) or an enabled NetworkExtension transparent/app proxy or content filter is active: apps using it send Anthropic traffic around both the tunnel and the guard |
 
 Yellow uses a 10 s window so it does not flicker. RED needs two consecutive
 failed probes (`RED_AFTER_FAILURES = 2`); after a single failure the last good
@@ -91,3 +93,11 @@ is needed. The Linux state file is `~/.local/state/anthropic-tunnel/indicator-st
 The menu labels explicitly distinguish disconnecting (allows direct access)
 from quitting the indicator (keeps the tunnel running). Installation, removal,
 verification and remaining login testing are documented in spec/08.
+
+## Leak guard lines (2026-10-29)
+
+The menu shows `Leak guard: on, N extra addresses` (or why it is not on) and,
+on macOS, one line per other connected VPN service from `scutil --nc list`
+("Anthropic stays blocked outside the tunnel"). A change into GUARD or PROXY
+sends one notification. These checks run on macOS only; the Linux tray is
+unchanged.

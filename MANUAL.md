@@ -36,6 +36,8 @@ Icon: three concentric circles, coloured by state, with a short title.
 | grey | `OFF` | switched off on purpose; Anthropic goes **direct** | Connect when you want it back |
 | grey | `?` | service restarting or the local API not answering | wait a few seconds |
 | green or blue with `·` | `·` | one probe failed, not yet red | wait for the next probe |
+| red (macOS) | `GUARD` | tunnel on, but the leak guard is missing, off or stalled | see [Troubleshooting](#guard-red) |
+| red (macOS) | `PROXY` | a system proxy or a transparent-proxy extension is active: apps using it go around the tunnel | switch that proxy off |
 
 Red needs two failed probes in a row, so a short network hiccup does not
 flash red. The probe is a real request to `api.anthropic.com` through the
@@ -75,6 +77,9 @@ system resolver or connect to cached real IPs.
 | Switch off on purpose (grey; Anthropic goes direct) | `sudo /usr/local/anthropic-tunnel/bin/tunnel-down.sh` |
 | Switch on | `sudo /usr/local/anthropic-tunnel/bin/tunnel-up.sh` |
 | Restart the service | `sudo /usr/local/anthropic-tunnel/bin/tunnel-restart.sh` |
+| Leak guard state (macOS; the status line also shows it) | `sudo bash /usr/local/anthropic-tunnel/bin/guard.sh status` |
+| Leak guard off, tunnel stays on (macOS) | `sudo bash /usr/local/anthropic-tunnel/bin/guard-off.sh` |
+| Leak guard log (macOS) | `tail -f /var/log/anthropic-tunnel/guard.log` |
 
 Healthy status on macOS:
 
@@ -180,9 +185,31 @@ This sends Anthropic traffic direct, knowingly. Go back with `tunnel-up.sh`.
 
 ### Another VPN is running
 
-Any other VPN or proxy client that takes the default route and DNS can send
-Anthropic traffic around the tunnel. Do not run one at the same time. If
-you need it: `tunnel-down.sh`, use the other VPN, then `tunnel-up.sh`.
+On macOS the leak guard refuses every packet to Anthropic that does not
+leave through this tunnel, so another VPN cannot carry Anthropic traffic:
+Anthropic simply stops working while that VPN owns the routes. Its name
+appears in the menu as "Other VPN connected". Disconnect it to get
+Anthropic back. If you really need it for Anthropic: `tunnel-down.sh`
+first (grey, direct on purpose), then `tunnel-up.sh` afterwards.
+
+A system proxy or a transparent-proxy extension is different: it takes
+connections before the packet filter sees them. The indicator turns red
+with `PROXY`. Switch the proxy off in that app or in System Settings.
+
+<a id="guard-red"></a>
+### Red `GUARD` (macOS)
+
+The tunnel is on but the leak guard is not active or has not checked in for
+30 seconds. Check and repair:
+
+```bash
+sudo bash /usr/local/anthropic-tunnel/bin/guard.sh status
+tail -20 /var/log/anthropic-tunnel/guard.log
+sudo bash client/scripts/guard-install.sh
+```
+
+The installer re-checks everything and removes the guard again by itself if
+Anthropic stops answering through the tunnel.
 
 ### After changing networks
 
@@ -226,6 +253,7 @@ All from the repository folder.
 | Apply a new config only | `sudo install -o root -g wheel -m 600 client/sing-box/config.json /usr/local/anthropic-tunnel/etc/config.json && sudo /usr/local/anthropic-tunnel/bin/tunnel-restart.sh` |
 | Update sing-box | `brew upgrade sing-box && sudo bash client/scripts/install.sh` (keep the server image on the same version) |
 | Install or update the indicator (no sudo) | `bash menubar/install.sh` |
+| Install or update only the leak guard (no tunnel restart; self-test with automatic rollback) | `sudo bash client/scripts/guard-install.sh` |
 | Remove everything (service, plist, sudoers, resolver files, install folder, logs; Homebrew's sing-box stays) | `sudo bash client/scripts/uninstall.sh` |
 
 Installed paths:
@@ -240,6 +268,9 @@ Installed paths:
 | `/Library/LaunchDaemons/local.anthropic-tunnel.plist` | service definition |
 | `/etc/sudoers.d/anthropic-tunnel` | password-free access to the three control scripts |
 | `/etc/resolver/<six domains>` | per-domain DNS |
+| `/Library/LaunchDaemons/local.anthropic-tunnel.guard.plist`, `.guard-refresh.plist` | leak guard jobs (every 5 s, every 5 min) |
+| pf anchor `com.apple/250.anthropic-tunnel` | leak guard rules (no change to `/etc/pf.conf`) |
+| `/usr/local/anthropic-tunnel/etc/guard-status` | leak guard state for the indicator |
 | `<SwiftBar plugin folder>/anthropic-tunnel.5s.py` | indicator |
 | `~/Library/Application Support/anthropic-tunnel-menubar/state.json` | indicator state between refreshes |
 

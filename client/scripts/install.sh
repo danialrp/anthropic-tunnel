@@ -42,3 +42,5 @@ resolver_add
 sleep 3
 echo "--- installed. version: $("$BIN/sing-box" version | head -1)"
 bash "$BIN/status.sh"
+echo "--- leak guard"
+bash "$REPO/client/scripts/guard-install.sh"

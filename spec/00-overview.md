@@ -26,7 +26,9 @@ In scope
 - Menu bar indicator (SwiftBar) with state colours, live stats, manual control.
 - Protocols: WireGuard first; VLESS+Reality added as a second transport because
   The operator switches between internet connections and some block WireGuard.
-- A second defensive layer (pf) is optional and documented in 04.
+- A packet-level leak guard on macOS (pf, spec/04): nothing reaches an
+  Anthropic address except through the tunnel, even with the daemon down or
+  another VPN active.
 
 Out of scope
 - Routing non-Anthropic traffic through the server.
@@ -38,7 +40,9 @@ Out of scope
 |---|---|
 | Server unreachable | Anthropic connections refused; indicator RED |
 | sing-box crashes | launchd restarts it; while down, TUN is gone and DNS for Anthropic domains must not resolve directly (see 04 for how this is enforced) |
-| App uses its own DoH / hard-coded IP | Known residual risk; mitigated by pf layer in 04; documented, not hidden |
+| App uses its own DoH / hard-coded IP | Refused by the leak guard unless it goes through the tunnel (Anthropic ranges plus resolved load-balancer addresses); hosts on shared CDNs are covered only by domain routing |
+| Another VPN takes the routes | Leak guard refuses Anthropic outside our TUN: Anthropic stops working, nothing leaks |
+| System proxy or NetworkExtension transparent proxy | Cannot be filtered at packet level; indicator turns red (`PROXY`) and notifies |
 | The operator disables the tunnel manually | Allowed, explicit, indicator GREY, traffic goes direct knowingly |
 
 ## Language

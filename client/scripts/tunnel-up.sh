@@ -11,4 +11,5 @@ else
   launchctl bootstrap system "$PLIST"
   echo "daemon loaded"
 fi
-echo "tunnel UP: Anthropic DNS -> $TUN_DNS, daemon $LABEL running"
+guard_start
+echo "tunnel UP: leak guard on, Anthropic DNS -> $TUN_DNS, daemon $LABEL running"

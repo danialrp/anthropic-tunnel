@@ -42,7 +42,7 @@ commit. If a value leaks, generate a new one and re-render both sides.
 | T2 | Open claude.ai in Chrome | loads; sing-box log shows outbound `wg-out` (or `vless-out`) |
 | T3 | Stop the server container | within 10 s menu bar RED; claude.ai refuses to load; `curl` fails (timeout, WireGuard drops silently), NOT a direct success |
 | T4 | Start container again | GREEN within 10 s, traffic resumes |
-| T5 | `kill -9` sing-box on Mac | launchd restarts it; during the gap Anthropic hosts are blocked by pf (if layer enabled) |
+| T5 | `kill -9` sing-box on Mac | launchd restarts it; during the gap Anthropic hosts are refused by the leak guard |
 | T6 | Non-Anthropic site (e.g. github.com) | goes direct, server log shows nothing |
 | T7 | tunnel-down.sh | GREY; claude.ai loads directly (known, intentional) |
 | T8 | uninstall.sh | Mac exactly as before: no utun, no daemon, no resolver files, no sudoers entry, DNS normal |
@@ -83,19 +83,34 @@ sudo systemctl disable --now anthropic-tunnel anthropic-tunnel-dns
 sudo resolvectl revert anthropic-dns0; sudo ip link del anthropic-dns0
 ```
 
+## Leak guard tests (T11 to T13)
+
+| # | Test | Expected |
+|---|---|---|
+| T11 | `sudo bash client/scripts/guard-install.sh` | self-test: Anthropic 401 through the tunnel; fake-IP probe on the physical interface refused in under 1 s; indicator shows `Leak guard: on` |
+| T12 | Another VPN connected (or `sudo route add -net 160.79.104.0/21 <LAN gateway>` as a stand-in, removed right after) | every Anthropic connection is refused at once; `sudo bash /usr/local/anthropic-tunnel/bin/guard.sh status` shows the block counters rising; other sites work |
+| T13 | System proxy switched on in System Settings | indicator red `PROXY` with a notification; off again → normal |
+
+Linux equivalents run in the container test and in the Linux runbook.
+
 ## Operational rule: other VPN apps
 
-Do not run any other VPN/proxy app (the ones installed on this Mac are
-listed in `private/notes.md`) at the same time as the tunnel. They replace the default route and DNS, which can
-route Anthropic traffic around sing-box. If one is needed, disconnect the
-tunnel first (grey state) and reconnect afterwards.
+The leak guard refuses every packet to Anthropic that does not leave
+through this tunnel, so another VPN running at the same time cannot carry
+Anthropic traffic; Anthropic simply stops working until that VPN releases
+the routes. Proxies are different: a system proxy or a NetworkExtension
+transparent proxy takes connections before pf sees them. The indicator turns
+red with `PROXY` when one is on. Switch it off, or disconnect the tunnel
+first (grey) if you really need it.
 
 ## Manual revert (memorise)
 
 ```
 sudo /usr/local/anthropic-tunnel/bin/tunnel-down.sh
 ```
-(unloads the daemon and removes the resolver files; Anthropic goes direct).
+(unloads the daemon, lifts the leak guard and removes the resolver files;
+Anthropic goes direct). Only the leak guard:
+`sudo bash /usr/local/anthropic-tunnel/bin/guard-off.sh`.
 Full removal: `sudo bash client/scripts/uninstall.sh`. If the scripts
 themselves are broken:
 ```

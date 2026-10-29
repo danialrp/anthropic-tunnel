@@ -15,7 +15,7 @@ Linux; same file, same states, BitBar-compatible output. States:
   RED    tunnel down, blocked     GREY   disabled by user / unknown
 Run with --action <name> to perform menu actions.
 """
-import json, os, subprocess, sys, time, urllib.request, urllib.error, urllib.parse, socket, shutil
+import calendar, json, os, subprocess, sys, time, urllib.request, urllib.error, urllib.parse, socket, shutil
 
 LINUX = sys.platform.startswith("linux")
 API = "http://127.0.0.1:9090"
@@ -28,6 +28,8 @@ LOG = "/var/log/anthropic-tunnel/sing-box.log"   # macOS; Linux uses journalctl
 ETC = "/usr/local/anthropic-tunnel/etc"                # install.sh writes these two files, readable by the installing user
 SECRET_FILE = os.environ.get("ANTHROPIC_TUNNEL_SECRET_FILE", ETC + "/clash-api.secret")
 SERVER_IP_FILE = ETC + "/server-ip"
+GUARD_STATUS = ETC + "/guard-status"        # written every 5 s by the macOS leak guard (spec/04)
+GUARD_STALE = 30                            # seconds after which the guard counts as not running
 STATE_DIR = os.path.expanduser("~/Library/Application Support/anthropic-tunnel-menubar")
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
 ACTIVE_WINDOW = 10          # seconds of "recent bytes" that count as ACTIVE
@@ -112,6 +114,43 @@ def server_tcp_reachable():
     try:
         with socket.create_connection((ip, 22), timeout=3): return True
     except OSError: return False
+
+def guard_info():
+    """Leak guard state from its status file: (ok, text)."""
+    parts = read(GUARD_STATUS).split()
+    if not parts:
+        return False, "not installed"
+    state, count, stamp = (parts + ["", "0", ""])[:3]
+    try:
+        age = time.time() - calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
+    except ValueError:
+        age = 1e9
+    if state != "on":
+        return False, state
+    if age > GUARD_STALE:
+        return False, f"not refreshed for {int(age)} s"
+    return True, f"on, {count} extra addresses"
+
+def bypass_risks():
+    """Things that route traffic around any packet filter: system proxies and transparent proxies."""
+    risks = []
+    out = sh(["scutil", "--proxy"], 3)
+    for key, name in (("HTTPEnable", "HTTP"), ("HTTPSEnable", "HTTPS"), ("SOCKSEnable", "SOCKS"),
+                      ("ProxyAutoConfigEnable", "PAC")):
+        if f"{key} : 1" in out:
+            risks.append(f"system proxy ({name})")
+    for line in sh(["systemextensionsctl", "list"], 5).splitlines():
+        if "[activated enabled]" in line and any(k in line for k in ("ransparentProxy", "AppProxy", "ilterData")):
+            risks.append("network extension proxy: " + line.split("\t")[-2].strip() if "\t" in line else "network extension proxy")
+    return risks
+
+def other_vpns():
+    """Connected VPN services other than this tunnel (informational: the guard blocks them from Anthropic)."""
+    names = []
+    for line in sh(["scutil", "--nc", "list"], 3).splitlines():
+        if "(Connected)" in line and '"' in line:
+            names.append(line.split('"')[1])
+    return names
 
 def load_state():
     try:
@@ -279,6 +318,23 @@ def gather():
         st["fail_count"] = 0; st["last_delay"] = info["delay"]
         state = "green"; label = "✓"   # never empty: SwiftBar hides an item with an empty title
 
+    # leak protection (macOS): a missing guard or an active proxy outranks every other state
+    if LINUX:
+        info["guard_ok"], info["guard"], info["bypass"], info["other_vpn"] = True, "", [], []
+    else:
+        info["guard_ok"], info["guard"] = guard_info()
+        info["bypass"] = bypass_risks() if info["loaded"] else []
+        info["other_vpn"] = other_vpns() if info["loaded"] else []
+    warn = ""
+    if info["loaded"] and not info["guard_ok"]:
+        state, label, warn = "red", "GUARD", f"Leak guard {info['guard']}: Anthropic traffic could leave outside the tunnel"
+    elif info["bypass"]:
+        state, label, warn = "red", "PROXY", "Bypass risk: " + ", ".join(info["bypass"]) + ". Apps using it send Anthropic traffic around the tunnel"
+    info["warning"] = warn
+    if warn and warn != st.get("warning"):
+        notify("Anthropic tunnel: leak risk", warn)
+    st["warning"] = warn
+
     # uptime bookkeeping and notifications
     if state in ("green", "yellow") and not st.get("started"): st["started"] = now
     if state in ("grey", "red"): st["started"] = None
@@ -319,12 +375,18 @@ def render():
         status = "Disabled by user: Anthropic traffic goes DIRECT"
     elif state == "grey":
         status = "Daemon starting or API unreachable"
+    elif info.get("warning"):
+        status = info["warning"]
     elif state == "red":
         status = f"Tunnel DOWN via {info['selector']}: Anthropic traffic BLOCKED ({info['delay_err'] or 'no reply'})"
     else:
         up = fmt_uptime(time.time() - info["started"]) if info.get("started") else "-"
         status = f"Connected via {info['selector']} · {info['delay']} ms · up {up}"
     print(item(status, sfimage="circle.fill", sfcolor=color))
+    if info["loaded"] and not LINUX:
+        print(item("Leak guard: " + info["guard"], disabled="true"))
+    for v in info.get("other_vpn", []):
+        print(item(f"Other VPN connected: {v} (Anthropic stays blocked outside the tunnel)", disabled="true"))
     print("---")
     loaded = info["loaded"]
     print(action_item("Connect", "connect", enabled=not loaded))

@@ -62,7 +62,7 @@
 
 Known limit (documented, not hidden): a client that uses its own encrypted
 DNS and Encrypted Client Hello would show neither a hijackable query nor a
-readable SNI. Only the IP-range rule and the pf second layer catch that case.
+readable SNI. Only the IP-range rule and the leak guard below catch that case.
 
 ## Mac environment found on 2026-10-28
 
@@ -71,8 +71,9 @@ readable SNI. Only the IP-range rule and the pf second layer catch that case.
   the git-ignored `private/notes.md`.
 - No proxy app running; system proxies off. Several VPN apps are installed
   but idle (names in `private/notes.md`).
-  If one of them is switched on it takes the default route and DNS; then
-  Rule 0 depends on the pf layer. Recorded as an operational rule in 06.
+  If one of them is switched on it takes the default route and DNS; the
+  leak guard below then refuses every packet to Anthropic that does not
+  leave through our utun. Operational rule in 06.
 - Six utun interfaces exist (system/iCloud); sing-box creates its own.
 - `sudo` needs a password: every privileged step is run by the operator in the
   terminal pane; the agent prepares the exact command.
@@ -103,9 +104,68 @@ purpose; `tunnel-restart.sh` = `launchctl kickstart -k`.
 launchd `KeepAlive` restarts it within seconds. In the gap the TUN is gone,
 but the `/etc/resolver` files still point Anthropic names at 172.19.0.2, which
 no longer exists, so those names fail to resolve and existing fake IPs
-(198.18.0.0/15) have no route. The gap is therefore fail-closed without pf.
-The pf anchor remains an optional third layer for the case where another VPN
-app takes over DNS and routing; it is not part of the first install.
+(198.18.0.0/15) have no route. The leak guard (below) also refuses any
+packet to an Anthropic address on any other interface, which covers apps
+that resolve names themselves.
+
+## Leak guard (pf, since 2026-10-29)
+
+Packet-level layer that holds even when sing-box is down, when another VPN
+owns the routes, or when an app resolves names itself and connects to a real
+address. It blocks every outgoing packet to Anthropic addresses unless it
+leaves through our own utun.
+
+- **Rules** live in the anchor `com.apple/250.anthropic-tunnel`, directly
+  under Apple's `anchor "com.apple/*"` hook in `/etc/pf.conf`, so
+  `/etc/pf.conf` is never edited. Rendered by `client/scripts/guard.sh`:
+  ```
+  table <anthropic_static> persist { 160.79.104.0/21, 198.18.0.0/15, 2607:6bc0::/48, 2001:2::/48 }
+  table <anthropic_dynamic> persist file "/usr/local/anthropic-tunnel/var/guard-dynamic.txt"
+  pass out quick on <our utun> to <anthropic_static>
+  pass out quick on <our utun> to <anthropic_dynamic>
+  block return out quick to <anthropic_static>
+  block return out quick to <anthropic_dynamic>
+  ```
+  The two pass lines exist only while our utun (the interface holding
+  172.19.0.1) exists; without it everything to those addresses is refused.
+  `block return` makes connections fail at once instead of timing out.
+- **Static addresses**: Anthropic's own range 160.79.104.0/21 and
+  2607:6bc0::/48 (most hosts, including claude.ai and api.anthropic.com,
+  resolve to 160.79.104.10 as of 2026-10-29), and sing-box's fake-IP ranges.
+- **Dynamic addresses**: hosts outside that range (Google Cloud load
+  balancers for assets.claude.ai, downloads.claude.ai, a-cdn.anthropic.com on
+  2026-10-29). `client/scripts/guard-ips.sh` resolves a fixed host list plus every
+  Anthropic host seen in current connections through sing-box's local API
+  (`/dns/query`, which answers through the tunnel), and skips any host whose
+  answer has a CNAME outside the six Anthropic domains, because such
+  addresses can be shared with unrelated sites on a CDN (s-cdn.anthropic.com,
+  status.claude.com). Those hosts stay covered by domain routing, not by the
+  guard. If the API does not answer, the last list is kept.
+- **Jobs**: `local.anthropic-tunnel.guard` runs `guard.sh apply` every 5 s:
+  enables pf if it is off (`pfctl -E`, token kept in var/ and released on
+  `down`), reloads Apple's ruleset if the `com.apple/*` hook disappeared
+  (some network changes flush it), and reloads the anchor whenever the utun
+  name changed or the anchor is empty. `local.anthropic-tunnel.guard-refresh`
+  runs `guard.sh refresh` every 5 min. Log: `/var/log/anthropic-tunnel/guard.log`.
+  Status for the indicator: `/usr/local/anthropic-tunnel/etc/guard-status`
+  (`on|off|error <count> <UTC time> <utun>`).
+- **Grey state**: `tunnel-down.sh` lifts the guard (Anthropic goes direct on
+  purpose); `tunnel-up.sh` restores it. `tunnel-restart.sh` re-points the
+  guard right after the restart; after a crash restart by launchd the guard
+  follows within 5 s, and in between traffic is refused, not leaked.
+- **Install**: `sudo bash client/scripts/guard-install.sh` (also run at the
+  end of install.sh). It never restarts the tunnel. It runs a self-test:
+  Anthropic must answer through the tunnel (otherwise it removes the guard
+  again by itself), and a fake-IP address forced onto the physical interface
+  must be refused in well under a second (a guarded address that routes
+  nowhere, so the probe cannot reach Anthropic even if the guard failed).
+- **Revert**: `sudo bash /usr/local/anthropic-tunnel/bin/guard-off.sh`
+  (unloads both jobs, flushes the anchor, releases the pf reference).
+
+What pf cannot stop: system HTTP/SOCKS proxies and NetworkExtension
+transparent or app proxies, which take connections above the IP layer. The
+indicator detects them (`scutil --proxy`, `systemextensionsctl list`) and
+turns red with `PROXY` (spec/05).
 
 ## launchd daemon
 

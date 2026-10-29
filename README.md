@@ -97,9 +97,14 @@ Three things keep it fail-closed:
   Linux a permanent dummy link carries systemd-resolved routing domains for
   the same six names. When sing-box is not running, those names do not
   resolve at all, and old fake addresses have no route.
-- **Belt and braces.** An app that resolves names itself (its own DNS over
-  HTTPS) and connects to a real IP is still caught by Anthropic's published
-  IP ranges or by the TLS server name sniffed from the connection.
+- **Leak guard (macOS).** A packet filter (pf) refuses every packet to an
+  Anthropic address unless it leaves through the tunnel interface. It holds
+  when sing-box is down, when another VPN takes the routes, and when an app
+  resolves names itself and connects to a real IP. A root job re-checks it
+  every 5 seconds and keeps the address list current through the tunnel.
+- **Belt and braces.** Inside the tunnel, a connection to a real Anthropic
+  IP is still recognised by Anthropic's published IP ranges or by the TLS
+  server name sniffed from the connection.
 
 The server side is one Docker container, bound to one UDP and one TCP port,
 that forwards whatever the client sends. It does no domain filtering of its
@@ -253,8 +258,10 @@ sudo bash client/scripts/install.sh      # installs and starts the service
 installs the rendered config, loads the launchd daemon
 `local.anthropic-tunnel` (starts at boot, restarts on crash), writes the six
 `/etc/resolver` files, and adds a sudoers entry so your user can run the
-connect, disconnect and restart scripts without a password. It ends by
-printing the status. Healthy output:
+connect, disconnect and restart scripts without a password. It then
+installs the leak guard (pf rules plus two root jobs), runs a self-test that
+removes the guard again if Anthropic stops answering through the tunnel, and
+prints the status. Healthy output:
 
 ```
 daemon loaded : yes
@@ -351,6 +358,8 @@ entry; the indicator calls the same scripts.
 | red | `DOWN` | tunnel unreachable, Anthropic traffic is blocked |
 | grey | `OFF` | switched off on purpose, Anthropic goes direct |
 | grey | `?` | service starting or local API not answering |
+| red | `GUARD` | macOS: tunnel on but the leak guard is not active |
+| red | `PROXY` | macOS: a system proxy or transparent-proxy extension could carry Anthropic traffic around the tunnel |
 
 Red appears only after two failed probes in a row, so a short network hiccup
 does not flash red. The menu has the status line with latency and uptime,
@@ -363,8 +372,9 @@ Every command, troubleshooting steps and server operations:
 ## Turning it off, reverting, uninstalling
 
 - **Off for a while:** `sudo /usr/local/anthropic-tunnel/bin/tunnel-down.sh`.
-  The service stops and the DNS layer is removed; Anthropic traffic goes
-  direct until `tunnel-up.sh`.
+  The service stops and the DNS layer and leak guard are removed; Anthropic
+  traffic goes direct until `tunnel-up.sh`.
+- **Only the leak guard off, macOS:** `sudo bash /usr/local/anthropic-tunnel/bin/guard-off.sh`.
 - **If the scripts themselves are broken, macOS:**
   ```bash
   sudo launchctl bootout system/local.anthropic-tunnel
@@ -384,11 +394,15 @@ Every command, troubleshooting steps and server operations:
 
 ## Limitations
 
-- **Another VPN at the same time.** A second VPN or proxy client that takes
-  over the default route and DNS can route Anthropic traffic around
-  sing-box. Do not run one alongside the tunnel; switch the tunnel off first
-  if you need one. An optional packet-filter layer for this case is designed
-  but not installed ([`spec/todo.md`](spec/todo.md)).
+- **Another VPN at the same time.** On macOS the leak guard refuses
+  Anthropic traffic that does not leave through this tunnel, so another VPN
+  cannot carry it; Anthropic stops working until that VPN releases the
+  routes. System proxies and transparent-proxy extensions work above the
+  packet layer and cannot be filtered; the indicator turns red (`PROXY`)
+  when one is on.
+- **Shared CDN hosts.** Anthropic hosts behind a shared CDN (for example the
+  status page) are routed through the tunnel by name, but the leak guard
+  does not block their addresses, because unrelated sites share them.
 - **Encrypted DNS plus Encrypted Client Hello.** An app that uses its own
   encrypted DNS and hides the TLS server name shows neither a name to fake
   nor a name to sniff. Only the IP-range rule catches it.
