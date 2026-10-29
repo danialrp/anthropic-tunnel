@@ -31,9 +31,10 @@ chosen (never "latest").
 |---|---|---|
 | Tunnel daemon | sing-box, official release tarball `sing-box-1.14.4-linux-{amd64,arm64}.tar.gz`, sha256 pinned in `client-linux/scripts/install.sh` | same version as the Mac and the server; the `.deb` would add its own unit, user, polkit and D-Bus policies |
 | Service manager | systemd (`anthropic-tunnel.service`, `anthropic-tunnel-dns.service`) | native, boot-time, `Restart=always` |
+| Optional XHTTP helper | pinned Xray 26.3.27 amd64, dynamic systemd user, authenticated localhost SOCKS | imported XHTTP transport unsupported by sing-box; no TUN or server changes |
 | Second layer | systemd-resolved routing domains on a dummy link (`anthropic-dns0`) | fail-closed DNS for the six apexes even when the daemon is down; Ubuntu Desktop and Server both run resolved |
 | Scripts | bash | same scripts as macOS, systemd/iproute2/resolvectl instead of launchctl/ifconfig/resolver files |
-| Indicator | Argos (GNOME Shell extension, BitBar format) running the same Python plugin | no new language; Argos master supports GNOME 45–51 |
+| Indicator | Python GTK 3 + AppIndicator tray, shared Python status backend, desktop autostart | works with Ubuntu AppIndicators on Wayland; no Argos/logout; requires system GI bindings |
 | Test rig | Docker Desktop on the Mac, `tests/linux-container/` (Ubuntu 24.04 + systemd, privileged) | the only Linux available here; limits in spec/08 |
 
 ## Menu bar
@@ -57,9 +58,9 @@ chosen (never "latest").
 ## Not used, on purpose
 
 - Node, Go, Rust, Swift compilation: nothing to build.
-- Clash / mihomo / Xray: sing-box alone covers both ends and both protocols.
+- Clash / mihomo. sing-box remains the routing/DNS engine; the optional Linux Xray helper serves imported XHTTP only.
 - A second firewall on the server, Network Extension apps, GUI VPN clients.
-- Any pip/npm dependency.
+- Any pip/npm dependency. The Linux tray uses distribution-provided Python GI bindings.
 
 ## Versions (filled in after pre-flight, then pinned)
 
@@ -73,4 +74,4 @@ chosen (never "latest").
 | macOS | any version that runs sing-box 1.14.4 and SwiftBar 2.1.1 (tested build in `private/notes.md`) | 2026-10-28 |
 | sing-box (Linux, tarball) | 1.14.4, sha256 in install.sh | 2026-10-29 |
 | Ubuntu target | 24.04 LTS (systemd 255, resolved, python3 3.12) | 2026-10-29 |
-| Argos | git master (GNOME 45–51), not the stale extensions.gnome.org build | 2026-10-29 |
+| Linux tray | distribution GTK 3 / AppIndicator bindings; Ubuntu AppIndicators host | 2026-10-29 |

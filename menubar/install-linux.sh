@@ -1,24 +1,44 @@
 #!/bin/bash
-# Install the indicator on Ubuntu GNOME as an Argos plugin (no sudo).
-#   bash menubar/install-linux.sh
-# Argos (https://github.com/p-e-w/argos) must be installed from its git master
-# into ~/.local/share/gnome-shell/extensions and enabled; the extensions.gnome.org
-# listing is stale. Plugins live in ~/.config/argos; the file name sets the
-# refresh interval (anthropic-tunnel.5s.py = every 5 s).
+# Install and launch the Linux AppIndicator tray frontend, without sudo.
+# Ubuntu GNOME uses its AppIndicators extension; no Argos or logout needed.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
-DIR="$HOME/.config/argos"
-mkdir -p "$DIR"
-# same plugin file as macOS; only the interpreter line differs
-{ echo '#!/usr/bin/python3'; tail -n +2 "$HERE/anthropic-tunnel.5s.py"; } > "$DIR/anthropic-tunnel.5s.py"
-chmod 755 "$DIR/anthropic-tunnel.5s.py"
-echo "installed $DIR/anthropic-tunnel.5s.py"
-if command -v gnome-extensions >/dev/null && gnome-extensions list 2>/dev/null | grep -q '^argos@'; then
-  gnome-extensions info 'argos@pew.worldwidemann.com' 2>/dev/null | grep -E 'State|Version' || true
-else
-  echo "Argos extension not found. Install it:"
-  echo "  git clone https://github.com/p-e-w/argos /tmp/argos && mkdir -p ~/.local/share/gnome-shell/extensions && cp -r /tmp/argos/argos@pew.worldwidemann.com ~/.local/share/gnome-shell/extensions/"
-  echo "  then log out and back in (Wayland) and: gnome-extensions enable argos@pew.worldwidemann.com"
-fi
-command -v notify-send >/dev/null || echo "note: notify-send missing (apt install libnotify-bin) - notifications will be silent"
-echo "test run:"; "$DIR/anthropic-tunnel.5s.py" | head -3
+/usr/bin/python3 "$HERE/anthropic-tunnel-tray.py" --check
+/usr/bin/python3 - "$HERE" <<'PY'
+import os, pathlib, shlex, shutil, subprocess, sys, time
+
+source = pathlib.Path(sys.argv[1])
+home = pathlib.Path.home()
+data = pathlib.Path(os.environ.get("XDG_DATA_HOME", home / ".local/share"))
+config = pathlib.Path(os.environ.get("XDG_CONFIG_HOME", home / ".config"))
+state = pathlib.Path(os.environ.get("XDG_STATE_HOME", home / ".local/state")) / "anthropic-tunnel"
+dest = data / "anthropic-tunnel"
+launcher = home / ".local/bin/anthropic-tunnel-indicator"
+subprocess.run(["/usr/bin/python3", str(source / "anthropic-tunnel-tray.py"), "--quit"], check=True)
+# The quit action crosses D-Bus; allow the previous process to exit before relaunch.
+time.sleep(0.5)
+for directory in (dest, launcher.parent, data / "applications", config / "autostart", state):
+    directory.mkdir(parents=True, exist_ok=True)
+for name in ("anthropic-tunnel-tray.py", "anthropic-tunnel.5s.py"):
+    shutil.copy2(source / name, dest / name)
+launcher.write_text("#!/bin/sh\nexec /usr/bin/python3 " + shlex.quote(str(dest / "anthropic-tunnel-tray.py")) + ' "$@"\n')
+launcher.chmod(0o755)
+# Disable only our old Argos plugin; keep other Argos scripts untouched.
+legacy = home / ".config/argos/anthropic-tunnel.5s.py"
+if legacy.exists():
+    legacy.rename(legacy.with_name(".anthropic-tunnel.5s.py.disabled"))
+quoted = str(launcher).replace("\\", "\\\\").replace('"', '\\"').replace("`", "\\`").replace("$", "\\$").replace("%", "%%")
+desktop = ('[Desktop Entry]\nType=Application\nName=Anthropic Tunnel\n'
+           'Comment=Tunnel status and controls\nExec="' + quoted + '"\n'
+           'Icon=network-vpn\nTerminal=false\nCategories=Network;\n'
+           'X-GNOME-Autostart-enabled=true\n')
+for folder in (data / "applications", config / "autostart"):
+    (folder / "anthropic-tunnel.desktop").write_text(desktop)
+with (state / "indicator.log").open("a") as log:
+    subprocess.Popen([str(launcher)], stdout=log, stderr=log, start_new_session=True,
+                     stdin=subprocess.DEVNULL, close_fds=True)
+print("Installed and launched Anthropic Tunnel indicator. It starts at login.")
+print("Launcher:", launcher)
+print("Log:", state / "indicator.log")
+print("Quit indicator only:", launcher, "--quit")
+PY

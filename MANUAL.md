@@ -18,10 +18,11 @@ the three control scripts (`tunnel-up.sh`, `tunnel-down.sh`,
 | macOS | six files in `/etc/resolver/` | send the Anthropic domains to the tunnel's DNS; without the daemon these names do not resolve |
 | Linux | systemd units `anthropic-tunnel` (sing-box) and `anthropic-tunnel-dns` (DNS layer) | start at boot; `Restart=always` |
 | Linux | dummy link `anthropic-dns0` with systemd-resolved routing domains | the Linux counterpart of the resolver files |
-| Both | menu bar indicator (SwiftBar on macOS, Argos on GNOME) | status, statistics, connect and disconnect, transport switch |
+| Both | menu bar indicator (SwiftBar on macOS, GTK/AppIndicator on Linux) | status, statistics, connect and disconnect, transport switch |
 
-Two transports: **WireGuard** (`wg-out`, default, UDP) and **VLESS+Reality**
-(`vless-out`, TCP) for networks that block WireGuard.
+The default render includes **WireGuard** (`wg-out`, UDP) and **VLESS+Reality**
+(`vless-out`, TCP). Linux also supports VLESS-only setup and additional
+imported profiles; the Transport menu lists the rendered selector members.
 
 ## 2. The indicator
 
@@ -46,8 +47,8 @@ tunnel, so green means "Anthropic answers through the tunnel", not only
 - Status line, for example `Connected via wg-out · 640 ms · up 3h 12m`.
 - **Connect** (enabled only when off), **Disconnect** and **Restart tunnel**
   (enabled only when on).
-- **Transport**: `wg-out` or `vless-out`, the active one marked. The choice
-  survives restarts.
+- **Transport**: the configured profiles, with the active one marked. The
+  choice survives restarts. Linux imports appear here after applying them.
 - **Stats**: session upload and download, current rate, the Anthropic hosts
   with open connections and their volume.
 - **Anthropic via tunnel: yes/no**, and in the red state **Server reachable
@@ -58,6 +59,11 @@ tunnel, so green means "Anthropic answers through the tunnel", not only
   to an agent), **Flush DNS cache**.
 
 A notification appears only when the state changes (down, up, off, on).
+On Linux, **Quit indicator** closes only the tray. The system service and
+DNS protection stay active. Disconnect removes DNS protection and disables
+boot startup until Connect is used again. The existing protection is based
+on DNS; it is not a complete firewall kill switch for apps that bypass the
+system resolver or connect to cached real IPs.
 
 ## 3. Daily commands
 
@@ -150,15 +156,15 @@ appears in the log where `sing-box started` would normally be.
 
 ### The icon is not in the menu bar
 
-- Is SwiftBar running? `open -a SwiftBar`. On GNOME, is Argos enabled?
-  `gnome-extensions info argos@pew.worldwidemann.com`.
-- On a crowded macOS menu bar, items that do not fit are hidden, not moved.
-  Remove or shorten other items. The tunnel item is narrow on purpose (only
-  `✓` when idle).
-- Is the plugin in place? It is in SwiftBar's plugin folder (shown in
-  SwiftBar's preferences) or `~/.config/argos/` on Linux, named
-  `anthropic-tunnel.5s.py`.
-- Run the plugin by hand to see an error: `<plugin folder>/anthropic-tunnel.5s.py | head -3`.
+On macOS, run `open -a SwiftBar` and check the plugin folder in its settings.
+Crowded menu bars may hide items; run the plugin by hand to inspect errors.
+
+On Linux, run `~/.local/bin/anthropic-tunnel-indicator`. Check dependencies
+with `/usr/bin/python3 menubar/anthropic-tunnel-tray.py --check` from the repo
+and ensure your desktop's AppIndicator/StatusNotifier host is enabled.
+Inspect `~/.local/state/anthropic-tunnel/indicator.log` for startup errors.
+Reinstall with `bash menubar/install-linux.sh`; this starts the tray and
+creates the desktop login entry. A second launch activates the same instance.
 
 ### No Anthropic site loads, everything else works
 
@@ -243,7 +249,12 @@ Installed paths:
 |---|---|
 | Render the config (on the machine that holds `private/secrets/`), then copy `client-linux/sing-box/config.json` to the Linux clone | `bash client-linux/render.sh` |
 | Install or update (downloads the pinned sing-box, checks SHA-256, units, DNS layer, sudoers, NetworkManager setting) | `sudo bash client-linux/scripts/install.sh` |
-| Install or update the indicator (GNOME + Argos, no sudo) | `bash menubar/install-linux.sh` |
+| Install or update the native GTK/AppIndicator tray (no sudo) | `bash menubar/install-linux.sh` |
+| Start the tray manually | `~/.local/bin/anthropic-tunnel-indicator` |
+| Quit only the tray | `~/.local/bin/anthropic-tunnel-indicator --quit` |
+| Remove only the tray and its login entry | `bash menubar/uninstall-linux.sh` |
+| Render without a Linux WireGuard peer | `bash client-linux/render.sh --vless-only` |
+| Apply the rendered config with startup rollback | `sudo bash client-linux/scripts/apply-config.sh` |
 | Remove everything | `sudo bash client-linux/scripts/uninstall.sh` |
 
 Installed layout and design: [`spec/08-client-linux.md`](spec/08-client-linux.md).
@@ -252,6 +263,60 @@ Step-by-step runbook with tests: [`client-linux/README.md`](client-linux/README.
 Test the Linux client inside a systemd container on any machine with
 Docker (`bash tests/linux-container/run.sh`, remove with
 `bash tests/linux-container/run.sh clean`). Its limits are listed in spec/08.
+
+### Linux: add, remove and select profiles
+
+Keep additional client outbounds in `private/secrets/extra-outbounds.json`,
+a JSON array. Each entry needs a unique `tag` and a supported `vless` or
+`socks` type. Copy client connection fields from a trusted configuration;
+never put credentials in tracked files. TLS profiles must verify their peer.
+SOCKS entries are restricted to authenticated helpers on `127.0.0.1`.
+
+Add an object to add a profile; remove its object to remove it. Use `[]` for
+no extra profiles. Do not remove the base `vless-out` profile by editing this
+file. Then render and apply (omit `--vless-only` for an existing dual setup):
+
+```bash
+bash client-linux/render.sh --vless-only
+sudo bash client-linux/scripts/apply-config.sh
+```
+
+The apply script validates the config, saves a root-only backup at
+`/usr/local/anthropic-tunnel/etc/config.before-profiles.json`, and restarts
+the daemon only if it was active. DNS protection remains up during restart.
+Startup failure restores the previous main config. An inactive tunnel stays
+off. Disable any other VPN TUN before using Connect. Use the Transport menu
+to select a profile and see its active mark; the status line names the
+selected transport.
+
+To restore the previous main config while the tunnel is active:
+
+```bash
+sudo install -o root -g root -m 600 /usr/local/anthropic-tunnel/etc/config.before-profiles.json /usr/local/anthropic-tunnel/etc/config.json
+sudo /usr/local/anthropic-tunnel/bin/tunnel-restart.sh
+```
+
+The optional `vless-xhttp-80` profile requires a verified cached Xray binary
+at `client-linux/bin/xray` and private helper config at
+`private/secrets/xhttp-client.json`; the installer/apply script installs its
+systemd helper. The helper uses authenticated loopback SOCKS and runs as an
+unprivileged dynamic user. Its binary pin currently covers amd64 only. See
+[`spec/08`](spec/08-client-linux.md#xhttp-helper) for the pin and service layout.
+
+### Linux: Google or other direct sites fail on an IPv4-only uplink
+
+If IPv4 works but normal HTTPS fails, first verify there is no physical IPv6
+default route (`ip -6 route show default`) and check the daemon log for direct
+IPv6 errors. On a confirmed IPv4-only uplink, save this in
+`private/secrets/linux-options.json`:
+
+```json
+{"ipv4_only": true}
+```
+
+Render and apply as above. This removes only the TUN's IPv6 address; it keeps
+third-party traffic direct. Set the option to `false` (or remove it), render
+and apply again to restore dual-stack capture when native IPv6 is available.
 
 ## 6. Server
 

@@ -28,17 +28,18 @@ test matrix: `spec/06-operations.md`.
 
 ## 0. What already exists (2026-10-29)
 
-- `client-linux/` was written and tested in a systemd Ubuntu 24.04 container
-  on the Mac. It has never run on a real Ubuntu machine. Expect small
-  surprises around NetworkManager and DNS; that is what this run is for.
+- `client-linux/` passed container tests and a real workstation VLESS/DNS
+  setup, imported-profile probes and native Wayland tray checks. Real-host
+  crash/reboot, NetworkManager persistence and login autostart remain open;
+  see `spec/08-client-linux.md` for the recorded results.
 - The server has the Mac's WireGuard peer only. The Linux peer
   (`10.66.66.3/32`, key `private/secrets/wg-linux.key` on the operator's main machine) is in the server
   template but **not deployed** unless `spec/history.md` says it was. Until
   then only the VLESS transport works from here (step 5).
-- Secrets live only on the operator's main machine (`private/secrets/`,
-  git-ignored), usually the Mac. This machine must not get the secrets
-  folder; it gets one rendered file (step 2). Its own `private/` folder
-  (create it) holds only this machine's notes (CLAUDE.md rule 4).
+- Render where the operator keeps the necessary client credentials under
+  `private/secrets/` (git-ignored). Alternatively transfer only the rendered
+  config to Linux over a private channel. Keep machine notes in
+  `private/notes.md`; never copy server private keys to a client.
 
 ## 1. Pre-flight (read-only)
 
@@ -71,15 +72,17 @@ Stop conditions (report to the operator, do not work around):
   default route or table). Same rule as on the Mac (spec/06): never two at
   once.
 
-## 2. Get the rendered config from the Mac
+## 2. Render locally or transfer the rendered config
 
-The operator (or the Mac agent) runs on the Mac:
+On the machine holding the client credentials:
 
 ```bash
 cd <repo> && bash client-linux/render.sh
 ```
 
-and copies `client-linux/sing-box/config.json` to this machine into the
+Use `bash client-linux/render.sh --vless-only` if no separate Linux WireGuard
+peer is deployed; that mode does not require WireGuard keys. When rendering
+on another machine, copy `client-linux/sing-box/config.json` into the
 same path inside this clone (`scp`, USB, anything; the file holds the
 WireGuard private key, the VLESS UUID and the Clash API secret, so it must
 not go through chat or a public channel). It is git-ignored here. Check:
@@ -115,8 +118,9 @@ claude.ai ->  198.18.x.x
 api check     : 401
 ```
 
-`api check: 000` right after install is expected while the server has no
-Linux WireGuard peer: go to step 5.
+If the dual-transport default selects an undeployed Linux WireGuard peer,
+`api check` can be `000`: go to step 5. A VLESS-only render selects VLESS
+immediately and should return `401`.
 
 One-line revert, memorise it before step 3:
 
@@ -167,7 +171,7 @@ Anthropic traffic for seconds.
 | L3 | Kill switch | `sudo systemctl stop anthropic-tunnel; resolvectl flush-caches` → `resolvectl query claude.ai` fails ("Connection refused"), curl → `Could not resolve host`, `curl https://github.com` → 200; `ip link show anthropic-tun0` gone. Then `sudo systemctl start anthropic-tunnel` → L1 passes again |
 | L4 | Crash restart | `sudo kill -9 $(systemctl show -p MainPID --value anthropic-tunnel)` → new PID within ~4 s (`systemctl show -p NRestarts`), L1 passes |
 | L5 | Down/up by user | `tunnel-down.sh` → both units disabled, `anthropic-dns0` gone, `resolvectl query claude.ai` gives a real IP (grey, intentional); `tunnel-up.sh` → L1 passes |
-| L6 | Non-Anthropic direct | `curl -s https://github.com -o /dev/null -w "%{remote_ip}\n"` is a real IP; journal shows `outbound/direct` for it; `resolvectl dns` lists `172.19.0.9:5553` only under `anthropic-dns0`, never under Global |
+| L6 | Non-Anthropic direct | `curl -s https://github.com -o /dev/null -w "%{remote_ip}\n"` is a real IP; journal shows `outbound/direct` for it; `resolvectl dns` lists `172.30.250.9:5553` only under `anthropic-dns0`, never under Global |
 | L7 | Reboot | `sudo reboot`; after login `status.sh` healthy with no manual action; `systemctl is-enabled anthropic-tunnel anthropic-tunnel-dns` both enabled |
 | L8 | NetworkManager (Desktop) | `nmcli device status` shows `anthropic-dns0` and `anthropic-tun0` as `unmanaged`; after toggling Wi-Fi off/on, `resolvectl status anthropic-dns0` still lists the six `~domains` |
 | L9 | Per-link upstream DNS | `resolvectl dns` shows the upstream (router/DHCP) on the physical link, not only under Global. If it is only Global, non-Anthropic lookups through sing-box fail (spec/08 explains); report, do not patch sing-box |
@@ -175,33 +179,27 @@ Anthropic traffic for seconds.
 | L11 | Leak audit | after an hour of use: `journalctl -u anthropic-tunnel --no-pager \| grep -iE 'anthropic\|claude' \| grep -c 'outbound/direct'` → 0 |
 | L12 | Uninstall (only if the operator asks; cuts the agent's line) | `uninstall.sh` → no units, link, rules, sudoers, files; DNS normal |
 
-## 7. Indicator (Ubuntu Desktop with GNOME)
+## 7. Native Wayland tray (desktop only)
 
-Argos is a GNOME Shell extension that runs BitBar-format plugins; our plugin
-file is the same one the Mac uses. Install Argos from its git master (the
-extensions.gnome.org listing is stale and will not load on GNOME 45+):
-
-```bash
-git clone https://github.com/p-e-w/argos /tmp/argos && mkdir -p ~/.local/share/gnome-shell/extensions && cp -r /tmp/argos/argos@pew.worldwidemann.com ~/.local/share/gnome-shell/extensions/
-```
-
-Log out and in (Wayland), then `gnome-extensions enable
-argos@pew.worldwidemann.com`, then:
+The GTK 3/AppIndicator frontend uses the shared Python status/action backend.
+Install Python GI, GTK 3 and Ayatana AppIndicator3 (or AppIndicator3) bindings,
+and use a desktop with a StatusNotifier host (Ubuntu AppIndicators on GNOME).
+Check dependencies, then install without sudo:
 
 ```bash
+/usr/bin/python3 menubar/anthropic-tunnel-tray.py --check
 bash menubar/install-linux.sh
 ```
 
-Expected in the top bar: the three-circle icon, green `✓` when idle, blue
-`↓…` while Anthropic traffic flows, red `DOWN`, grey `OFF` or `?`. Menu:
-status line, Connect/Disconnect/Restart (through the sudoers entry, no
-password), Transport with ✓ on the active one, Stats, Open log (opens a
-terminal with `journalctl -fu`), Copy diagnostics (`wl-copy`/`xclip`, or a
-file in `$HOME`), Flush DNS cache. Notifications need `libnotify-bin`
-(`notify-send`). Record what works and what looks different from the Mac in
-spec/08; cosmetic differences are expected, missing actions are not.
+The installer launches the tray and adds desktop/login entries. Launch it
+again with `~/.local/bin/anthropic-tunnel-indicator`. Status, controls,
+configured transports, statistics, logs, diagnostics and DNS flushing are in
+the menu. Multiple launches activate the existing instance. Quit closes only
+the indicator; Disconnect stops the tunnel and removes DNS protection.
 
-Ubuntu Server has no panel: skip this section, `status.sh` is the indicator.
+Revert the indicator installation with `bash menubar/uninstall-linux.sh`;
+this leaves the tunnel running. For installed paths and test results see
+spec/08. Ubuntu Server has no panel: use `status.sh` instead.
 
 ## 8. Known pitfalls (found in the container run, 2026-10-29)
 

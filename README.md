@@ -14,8 +14,8 @@ traffic is refused instead of leaking out over your normal connection.
 
 It is built with [sing-box](https://sing-box.sagernet.org/) on both ends,
 plain shell scripts, launchd or systemd, and a small Python menu bar
-indicator. Nothing is compiled and there are no third-party packages beyond
-sing-box itself.
+indicator. The Linux tray uses GTK/AppIndicator bindings; imported XHTTP
+profiles optionally use a local Xray helper.
 
 ## Contents
 
@@ -130,7 +130,7 @@ reasoning, is in [`spec/02-domains.md`](spec/02-domains.md).
 |---|---|
 | Server (Docker, any Linux VPS) | in daily use |
 | macOS client + SwiftBar indicator | in daily use; acceptance tests T1 to T10 passed ([`spec/06`](spec/06-operations.md)) |
-| Linux client (systemd + systemd-resolved; Ubuntu 24.04 tested) + Argos indicator on GNOME | complete; passed a full test run in a systemd container, first real-machine run pending ([`spec/08`](spec/08-client-linux.md)) |
+| Linux client + native Wayland GTK/AppIndicator tray | VLESS, imported profiles, DNS routing and tray verified on a real workstation; crash/reboot and login-autostart checks remain open ([`spec/08`](spec/08-client-linux.md)) |
 
 Open work is tracked in [`spec/todo.md`](spec/todo.md).
 
@@ -154,9 +154,9 @@ Open work is tracked in [`spec/todo.md`](spec/todo.md).
 
 **Linux client**
 - systemd and systemd-resolved (the default on Ubuntu Desktop and Server),
-  iproute2, `curl` or `wget`, `sudo`.
-- GNOME with the [Argos](https://github.com/p-e-w/argos) extension for the
-  indicator (optional).
+  iproute2, `python3`, `curl` or `wget`, `sudo`.
+- For the optional tray: GTK 3, Python GI and Ayatana AppIndicator3 (or
+  AppIndicator3), plus a StatusNotifier host such as Ubuntu AppIndicators.
 
 **Where you prepare things:** the machine that holds `private/secrets/` (usually your
 Mac) also needs `sing-box` to generate keys and validate configs.
@@ -298,9 +298,13 @@ marks its two network interfaces unmanaged for NetworkManager, adds the
 sudoers entry and prints the status. Healthy output matches the macOS one,
 with `dns layer : up (6/6 routing domains)` instead of resolver files.
 
-Indicator on GNOME (optional): install Argos from its Git repository, then
-`bash menubar/install-linux.sh`. Exact steps, a twelve-point test list and
-known pitfalls are in the Linux runbook
+For VLESS-only setup before deploying a separate Linux WireGuard peer, render
+with `bash client-linux/render.sh --vless-only`. Additional profiles and
+per-machine options live in `private/secrets/`; see the operator manual.
+
+Install the optional Wayland tray with `bash menubar/install-linux.sh`. It
+starts immediately and at desktop login. Exact steps, a twelve-point test
+list and known pitfalls are in the Linux runbook
 [`client-linux/README.md`](client-linux/README.md).
 
 ### 6. Verify
@@ -388,9 +392,12 @@ Every command, troubleshooting steps and server operations:
 - **Encrypted DNS plus Encrypted Client Hello.** An app that uses its own
   encrypted DNS and hides the TLS server name shows neither a name to fake
   nor a name to sniff. Only the IP-range rule catches it.
-- **Linux on real hardware.** The Linux client has passed a complete test
-  run in a systemd container but not yet on a physical machine; the runbook
-  lists what still needs checking (NetworkManager behaviour, reboot, GNOME).
+- **Linux acceptance checks.** Real-machine VLESS, profile probes, DNS routing
+  and the Wayland tray have been verified. Crash/reboot, NetworkManager
+  persistence and tray startup at login still need real-host testing.
+- **DNS protection scope.** The persistent DNS layer protects the configured
+  suffixes during daemon failure; it is not a complete firewall kill switch
+  for cached real IPs or applications that bypass the system resolver.
 - **sing-box version.** Tested with 1.14.4 on all three ends. Homebrew may
   install a newer version; keep the server image tag in
   `server/docker-compose.yml` on the same version.
@@ -449,7 +456,7 @@ spec/                numbered specs, decision log, history, open tasks
 server/              docker-compose.yml, sing-box config template, render.sh
 client/              macOS: config template, render.sh, launchd plist, scripts/
 client-linux/        Linux: config template, render.sh, systemd/, scripts/, runbook
-menubar/             indicator plugin (SwiftBar on macOS, Argos on GNOME), installers, icon generator
+menubar/             indicator plugin (SwiftBar on macOS, GTK/AppIndicator on Linux), installers, icon generator
 tests/               test notes; linux-container/ runs the Linux client in a systemd container
 private/             your data: secrets/, notes.md, backups/ (git-ignored as a whole, you create it)
 ```

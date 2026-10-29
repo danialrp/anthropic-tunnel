@@ -86,7 +86,7 @@ def process_running():
 
 def tun_up():
     if LINUX:
-        return "inet 172.19.0.1" in sh(["ip", "-4", "addr", "show", TUN_IF])
+        return "inet 172.30.250.1" in sh(["ip", "-4", "addr", "show", TUN_IF])
     return "172.19.0.1" in sh(["ifconfig"])
 
 def resolver_state():

@@ -62,7 +62,7 @@ for); all later access is by key.
 
 ## 2026-10-28 · Server must be in the United States (the operator's rule)
 Any server used by this project must have a US-geolocated public IP. Current
-server verified US on two services (details in `spec/private.md`). Added as
+server verified US on two services (details in `private/notes.md`). Added as
 CLAUDE.md rule 11.
 
 ## 2026-10-28 · sing-box pinned to 1.14.4 on both ends
@@ -108,7 +108,7 @@ architectures is pinned in install.sh (the release ships no checksum file).
 ## 2026-10-29 · One WireGuard peer per client
 Why: a WireGuard peer is one session; a second client on the Mac's key would
 steal the endpoint and cut the Mac's line (rule 12). The Linux client has its
-own key (secrets/wg-linux.key) and address 10.66.66.3/32; the server template
+own key (private/secrets/wg-linux.key) and address 10.66.66.3/32; the server template
 carries both peers. VLESS keeps one UUID (multi-session by design).
 
 ## 2026-10-29 · One indicator file for both platforms
@@ -127,10 +127,76 @@ Macs both work.
 
 ## 2026-10-29 · One git-ignored private/ folder for all operator data
 Why: the repository is shared by every operator who clones it. A single folder
-that git ignores as a whole (`private/`: secrets/, notes.md, backups/) is
+that git ignores as a whole (`private/`: private/secrets/, notes.md, backups/) is
 easier to keep right than several ignore rules, and the same convention works
 for every operator and agent. The render scripts read `private/secrets/`.
 CLAUDE.md rule 4 states it, including a staged-diff check before every
 commit. Rendered configs and downloaded binaries stay where the scripts write
 them, as git-ignored build outputs. Rejected: separate ignored locations for
 keys and notes (two places to remember).
+
+## 2026-10-29 · VLESS-only Linux bootstrap and separate Linux TUN addresses
+
+Use the already-deployed project VLESS/Reality listener for Linux setup without
+reusing the Mac WireGuard peer or changing the shared server. Add an explicit
+`--vless-only` render mode that requires only VLESS connection secrets and a
+local API secret, removes WireGuard, and selects VLESS by default. Preserve
+the existing dual-transport render mode for a future deployed Linux peer.
+
+Move Linux IPv4 TUN/DNS addresses to `172.30.250.1/30` and `172.30.250.9/32`
+because the previous TUN address overlaps an existing local Docker bridge.
+Keep the Linux scripts and indicator in sync; macOS stays on its original
+addresses. The new range is verified free on the setup machine, not guaranteed
+free on every host. No Docker networks or server services were changed.
+
+## 2026-10-29 · One active Linux TUN during this deployment
+
+An existing VPN resumed using table 2022 and prevented the project daemon from
+adding its default route. The user disabled that VPN's TUN, and restarting the
+project daemon restored service while retaining the DNS protection layer.
+Keep the other TUN off; changing only the table number would not establish
+correct coexistence between two sets of DNS and routing rules. Do not flush
+another application's routing table as a startup workaround.
+
+## 2026-10-29 · Replace Linux Argos frontend with GTK/AppIndicator
+
+The user requested a tray app for the current Wayland session. Use the already
+available GTK 3/AppIndicator bindings and Ubuntu AppIndicators host, avoiding
+the session restart required to load newly installed Argos. Keep the existing
+Python module as the shared status/icon/action backend and leave macOS SwiftBar
+behaviour unchanged. Probes run off the UI thread; a D-Bus application ID
+ensures one instance. Desktop autostart runs as the user, with the existing
+limited sudoers actions for tunnel controls. Supersedes the Argos choice above.
+
+## 2026-10-29 · Preserve imported profiles and isolate XHTTP
+
+The user requested all existing server connection profiles. Keep extra
+credential-bearing outbounds under `private/secrets/extra-outbounds.json` and merge
+them when rendering, rather than putting credentials into the template or
+losing imports on regeneration. Preserve the working default and fail-closed
+routing. Import only client connection endpoints, not administration listeners;
+WireGuard still requires a distinct deployed Linux peer.
+
+Use explicit SSH-authenticated SPKI pins for the expired/self-signed TLS
+profiles instead of accepting arbitrary certificates. For XHTTP, add a pinned
+Xray helper behind authenticated loopback SOCKS, with no route management and
+no direct fallback. It runs as a systemd dynamic user with a credential file.
+Applying profiles preserves the user's current off/on state; an inactive
+tunnel stays off, especially when another VPN TUN is active.
+
+## 2026-10-29 · Per-machine IPv4-only TUN option
+
+A synthetic TUN IPv6 address made ordinary direct connections select IPv6 on
+an uplink with no IPv6 default route. Google worked over IPv4 but reset after
+TCP establishment over the TUN's unusable IPv6 path. Add a private
+`linux-options.json` setting that removes the TUN IPv6 address only on this
+machine. Preserve dual-stack defaults for machines with native IPv6; do not
+change global IPv6 settings or route third-party sites through the server.
+
+## 2026-10-29 · Preserve the replacement repository conventions
+
+Base the Linux PR on the replacement repository's main commit instead of
+merging the deleted repository's unrelated history. Use `private/secrets/`
+for client credentials and the English `MANUAL.md` for operator commands.
+Parse indicator inputs as JSON: the new renderer uses multiline output and
+VLESS-only configs have no WireGuard peer from which to extract an address.
