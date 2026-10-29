@@ -323,7 +323,9 @@ On the client:
 curl -s --max-time 15 -o /dev/null -w "HTTP %{http_code} remote_ip=%{remote_ip}\n" https://api.anthropic.com/v1/models
 ```
 
-Expect `HTTP 401` and a `remote_ip` starting with `198.18.`. Then open
+Expect `HTTP 401` and a `remote_ip` starting with `198.18.`. On macOS, `bash tests/leak-test-macos.sh` runs
+the complete leak test (no sudo, changes nothing) and prints a pass/fail line
+for every check. Then open
 https://claude.ai in a browser. To see the kill switch work, stop the
 service for a moment (`sudo launchctl kill SIGTERM system/local.anthropic-tunnel`
 on macOS, or `sudo systemctl stop anthropic-tunnel` on Linux): Anthropic sites

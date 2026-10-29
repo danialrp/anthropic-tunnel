@@ -99,6 +99,12 @@ Results on the operator's Mac, 2026-10-29:
 | T12 (stand-in) | PASS. Requests forced out of en0 around the tunnel (`curl --interface en0` with the real address): api.anthropic.com and claude.ai (160.79.104.10), a-cdn (34.36.57.103), downloads (35.190.46.17) all refused in under 0.001 s; github.com on the same path 200. A real second VPN is still to be tried. |
 | T5 with guard | PASS. `tunnel-restart.sh`: Anthropic back within 1 s, guard pass interface follows the tunnel utun, en0 bypass still refused. |
 | T13 | open (needs a system proxy switched on by hand) |
+| T14 full leak test | PASS, 44 of 44 (`bash tests/leak-test-macos.sh`). DNS: 13 Anthropic names incl. a random subdomain get fake IPs, six resolver entries on 172.19.0.2. 14 live Anthropic connections, all on wg-out. Whole sing-box log (66,492 lines): 8,661 Anthropic connections through the tunnel, 0 direct. claude.ai sees the server address, a non-Anthropic site sees the Mac's own. TCP 443/80 to Anthropic static and dynamic addresses and to a fake IP via en0 and via each of the six other utuns: refused in 1 to 3 ms. UDP 443 (QUIC) via en0 refused at once while a control address times out. No system proxy, no proxy extension, no other VPN. Guard on, passing only utun7, checked 3 s before. api 401, claude.ai answers, github 200. |
+
+Not covered by T14: an app that sends raw DNS straight to the LAN router
+(not the system resolver) would reveal an Anthropic name to the router; its
+connection is still refused by the guard. Hosts behind shared CDNs (status
+page, s-cdn) are routed by name but not guarded by address.
 
 Linux equivalents run in the container test and in the Linux runbook.
 

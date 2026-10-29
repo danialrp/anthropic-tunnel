@@ -74,6 +74,7 @@ system resolver or connect to cached real IPs.
 | Task | Command |
 |---|---|
 | Status (six checks) | `bash /usr/local/anthropic-tunnel/bin/status.sh` |
+| Full leak test, macOS (no sudo, changes nothing) | `bash tests/leak-test-macos.sh` from the repository folder |
 | Switch off on purpose (grey; Anthropic goes direct) | `sudo /usr/local/anthropic-tunnel/bin/tunnel-down.sh` |
 | Switch on | `sudo /usr/local/anthropic-tunnel/bin/tunnel-up.sh` |
 | Restart the service | `sudo /usr/local/anthropic-tunnel/bin/tunnel-restart.sh` |
